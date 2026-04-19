@@ -1,0 +1,37 @@
+# CS 5220 SP2026 Final Project: Scaling Parallel Stratego Training
+
+**Cornell University** \
+**Authors:** [Abrar Amin](https://github.com/abrar-amin) & [Dalton Luce](https://github.com/da-luce)
+
+- [CS 5220 SP 2026](https://www.cs.cornell.edu/courses/cs5220/2026sp/)
+- [CS 5782 SP2026](https://www.cs.cornell.edu/courses/cs4782/2026sp/): helpful RL background resources
+
+## Overview
+
+This project explores the scalability and stability tradeoffs of parallelized Proximal Policy Optimization ([PPO](https://arxiv.org/abs/1707.06347)) via self-play in the game of [Stratego](https://en.wikipedia.org/wiki/Stratego). By distributing environment simulation and training across multiple workers, we aim to maximize experience generation throughput.
+
+To manage computational complexity, training begins on [Stratego Tiny](https://www.diva-portal.org/smash/get/diva2:1656447/FULLTEXT01.pdf#section.2.1) (a reduced state/action space variant) and will progressively scale toward the full board state.
+
+## Architecture & Tech Stack
+
+This project is built for high-performance execution on the [Perlmutter](https://www.nersc.gov/what-we-do/computing-for-science/perlmutter) supercomputer. To minimize overhead, the entire pipeline is a pure C++ implementation.
+
+* **Algorithm:** Proximal Policy Optimization (PPO) (Actor-Critic)
+* **Environment:** Custom C++ Stratego grid simulation
+* **Distributed Communication:** NCCL (NVIDIA Collective Communications Library) 
+* **Target Hardware:** Perlmutter (Multi-GPU node scaling)
+
+## Core Interfaces
+
+As opposed to directly following established RL frameworks like OpenSpiel, we opted for a minimal set of simple abstractions tailored to our needs. The system is decoupled into three primary C++ interfaces to allow for rapid iteration and testing:
+1. **`Environment`:** A Gymnasium-style interface handling `reset`, `step`, and game logic (imperfect information masking, combat resolution, 500-step truncation).
+2. **`Agent`:** A dual-headed Actor-Critic model. It outputs actions/log-probs for self-play rollouts and evaluates value estimations for the PPO update.
+3. **`RolloutBuffer`:** An on-policy data store that collects step trajectories and computes Generalized Advantage Estimation (GAE) before flushing.
+
+## Training Pipeline (Self-Play)
+
+1. **Parallel Rollouts:** Multiple workers independently simulate games against a uniformly sampled pool of past checkpoints.
+2. **Synchronization:** Gradients and model parameters are synchronized across GPUs using NCCL. We are evaluating both synchronous (stable but bottlenecked) and asynchronous (higher throughput but noisier) update strategies.
+3. **Optimization:** The PPO clipped surrogate loss is calculated, and weights are updated via mini-batches.
+
+## TODO: Running on Perlmutter
