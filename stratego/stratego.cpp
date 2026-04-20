@@ -1,8 +1,11 @@
 #include "stratego.h"
+#include "setup_generator.h"
 #include <cmath>
 #include <algorithm>
 #include <fstream>
 #include <random>
+#include <iostream>
+#include <stdexcept>
 
 namespace stratego {
 
@@ -38,33 +41,45 @@ void Board::initialize_game(GameType type) {
         height = 10;
         initialize_empty();
 
-        auto setup_army = [&](Player player, int start_y) {
-            std::vector<PieceType> deck = {
-                PieceType::Flag, PieceType::Marshal, PieceType::General, PieceType::Spy
-            };
-            deck.insert(deck.end(), 6, PieceType::Bomb);
-            deck.insert(deck.end(), 8, PieceType::Scout);
-            deck.insert(deck.end(), 5, PieceType::Miner);
-            deck.insert(deck.end(), 4, PieceType::Sergeant);
-            deck.insert(deck.end(), 4, PieceType::Lieutenant);
-            deck.insert(deck.end(), 4, PieceType::Captain);
-            deck.insert(deck.end(), 3, PieceType::Major);
-            deck.insert(deck.end(), 2, PieceType::Colonel);
+        try {
+            // The path is relative to the build directory where the executable runs.
+            auto distributions = stratego::setup::load_distributions_from_json("../data/piece_dist.json");
+            
+            // Generate setups for both players using the new probabilistic generator.
+            stratego::setup::generate_probabilistic_setup(*this, Player::Red, distributions);
+            stratego::setup::generate_probabilistic_setup(*this, Player::Blue, distributions);
+        } catch (const std::exception& e) {
+            std::cerr << "Warning: Could not load probabilistic setup from JSON (" << e.what() << ").\n"
+                      << "Falling back to random setup." << std::endl;
+            
+            // Fallback to the original random setup if the JSON is missing or invalid.
+            auto setup_army = [&](Player player, int start_y) {
+                std::vector<PieceType> deck = {
+                    PieceType::Flag, PieceType::Marshal, PieceType::General, PieceType::Spy
+                };
+                deck.insert(deck.end(), 6, PieceType::Bomb);
+                deck.insert(deck.end(), 8, PieceType::Scout);
+                deck.insert(deck.end(), 5, PieceType::Miner);
+                deck.insert(deck.end(), 4, PieceType::Sergeant);
+                deck.insert(deck.end(), 4, PieceType::Lieutenant);
+                deck.insert(deck.end(), 4, PieceType::Captain);
+                deck.insert(deck.end(), 3, PieceType::Major);
+                deck.insert(deck.end(), 2, PieceType::Colonel);
 
-            std::random_device rd;
-            std::mt19937 g(rd());
-            std::shuffle(deck.begin(), deck.end(), g);
+                std::random_device rd;
+                std::mt19937 g(rd());
+                std::shuffle(deck.begin(), deck.end(), g);
 
-            int idx = 0;
-            for (int y = start_y; y < start_y + 4; ++y) {
-                for (int x = 0; x < 10; ++x) {
-                    place_piece(x, y, deck[idx++], player);
+                int idx = 0;
+                for (int y = start_y; y < start_y + 4; ++y) {
+                    for (int x = 0; x < 10; ++x) {
+                        place_piece(x, y, deck[idx++], player);
+                    }
                 }
-            }
-        };
-        
-        setup_army(Player::Blue, 0);
-        setup_army(Player::Red, 6);
+            };
+            setup_army(Player::Blue, 0);
+            setup_army(Player::Red, 6);
+        }
     } else if (type == GameType::Tiny) {
         width = 4;
         height = 4;

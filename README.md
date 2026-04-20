@@ -12,6 +12,16 @@ This project explores the scalability and stability tradeoffs of parallelized Pr
 
 To manage computational complexity, training begins on [Stratego Tiny](https://www.diva-portal.org/smash/get/diva2:1656447/FULLTEXT01.pdf#section.2.1) (a reduced state/action space variant) and will progressively scale toward the full board state.
 
+We use the modern Stratego numbering system, where larger numbers indicate higher piece value. We do not use the Spotter piece for simplicity. We provide three game types:
+
+    Normal: 10x10 grid, 40 pieces. Standard competitive play.
+
+    Quick: 8x8 grid, 10 pieces. Accelerated variant.
+
+    Tiny: 6x6 grid, 6 pieces. Minimalist state-space for testing.
+
+When playing Normal, the starting setup is sampled from a Constrained Weighted Distribution based on the Dobby/Oewesok marginals. The placement logic follows an iterative masking approach: pieces are sampled sequentially, starting with the Flag and Bombs, with the probability map re-normalized after each tile is occupied. This ensures valid, non-overlapping configurations that mirror human expert heuristics while maintaining high entropy for RL training. In practice, these setups are not ideal, as sampling from a distribution for each piece individually doesn't consider the synergy of piece clusters, such as the critical proximity of the Spy to the Marshal or the mutual protection of Bomb-Flag formations. However, it is much better than complete randomness.
+
 
 ## Building
 
