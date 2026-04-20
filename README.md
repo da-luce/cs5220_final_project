@@ -56,3 +56,30 @@ As opposed to directly following established RL frameworks like OpenSpiel, we op
 1. **Parallel Rollouts:** Multiple workers independently simulate games against a uniformly sampled pool of past checkpoints.
 2. **Synchronization:** Gradients and model parameters are synchronized across GPUs using NCCL. We are evaluating both synchronous (stable but bottlenecked) and asynchronous (higher throughput but noisier) update strategies.
 3. **Optimization:** The PPO clipped surrogate loss is calculated, and weights are updated via mini-batches.
+
+```text
+final_project/
+├── CMakeLists.txt
+├── README.md
+├── main.cpp                  # Only parses args and launches train/eval modes
+│
+├── stratego/                 # PURE GAME LOGIC (No RL code here)
+│   ├── stratego.h            # Board, Piece, Move definitions
+│   └── stratego.cpp          # Move execution, combat resolution
+│
+├── environment/              # GYM-STYLE WRAPPERS
+│   ├── environment.h         # Base Environment interface
+│   └── stratego_env.cpp      # StrategoEnvironment class (generates onbs)
+│
+├── rl/                       # PPO & DISTRIBUTED TRAINING CODE
+│   ├── agent.h               # Agent interface and struct definitions
+│   ├── rollout_buffer.cpp    # Trajectory storage and GAE math
+│   ├── ppo_trainer.cpp       # Training PPO
+│   └── nccl_utils.cpp        # (Future) Perlmutter multi-GPU sync helpers
+│
+├── frontend/                 # VISUALIZATION & PLAY
+│   └── play_ascii.cpp        # Your ncurses terminal UI
+│
+└── experiments/              # SCRIPTS & PROTOTYPES
+    └── play.py               # Tkinter Python UI
+```
