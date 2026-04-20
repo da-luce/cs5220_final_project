@@ -18,3 +18,5 @@ target_link_libraries(test_stratego PRIVATE stratego_core)
 # Register the test so it can be run via `ctest` or `make test`
 add_test(NAME TestStratego COMMAND test_stratego)
 
+# Include the frontend module
+add_subdirectory(frontend)
