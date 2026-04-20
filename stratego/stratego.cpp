@@ -408,6 +408,27 @@ bool Board::save_to_file(const std::string& filename) const {
         ofs.write(&revealed, sizeof(revealed));
     }
 
+    // 3. Write move count and move history
+    ofs.write(reinterpret_cast<const char*>(&move_count), sizeof(move_count));
+    size_t history_size = move_history.size();
+    ofs.write(reinterpret_cast<const char*>(&history_size), sizeof(history_size));
+    if (history_size > 0) {
+        ofs.write(reinterpret_cast<const char*>(move_history.data()), history_size * sizeof(Move));
+    }
+
+    // 4. Write chase hashes
+    auto write_hashes = [&ofs](const std::vector<std::string>& hashes) {
+        size_t size = hashes.size();
+        ofs.write(reinterpret_cast<const char*>(&size), sizeof(size));
+        for (const auto& hash : hashes) {
+            size_t len = hash.length();
+            ofs.write(reinterpret_cast<const char*>(&len), sizeof(len));
+            ofs.write(hash.data(), len);
+        }
+    };
+    write_hashes(red_chase_hashes);
+    write_hashes(blue_chase_hashes);
+
     return ofs.good();
 }
 
@@ -448,7 +469,39 @@ bool Board::load_from_file(const std::string& filename) {
         piece = {static_cast<PieceType>(type_c), static_cast<Player>(owner_c), (revealed_c != 0)};
     }
 
-    return ifs.peek() == EOF; // Ensure we successfully read the whole file
+    // 4. Read extended state if available (move count, history, and hashes)
+    if (ifs.peek() != EOF) {
+        ifs.read(reinterpret_cast<char*>(&move_count), sizeof(move_count));
+        size_t history_size = 0;
+        ifs.read(reinterpret_cast<char*>(&history_size), sizeof(history_size));
+        
+        if (!ifs.fail()) {
+            move_history.resize(history_size);
+            if (history_size > 0) {
+                ifs.read(reinterpret_cast<char*>(move_history.data()), history_size * sizeof(Move));
+            }
+
+            // 5. Read chase hashes
+            auto read_hashes = [&ifs](std::vector<std::string>& hashes) {
+                size_t size = 0;
+                ifs.read(reinterpret_cast<char*>(&size), sizeof(size));
+                if (ifs.fail()) return;
+                hashes.resize(size);
+                for (size_t i = 0; i < size; ++i) {
+                    size_t len = 0;
+                    ifs.read(reinterpret_cast<char*>(&len), sizeof(len));
+                    if (ifs.fail()) return;
+                    std::string hash(len, '\0');
+                    ifs.read(&hash[0], len);
+                    hashes[i] = hash;
+                }
+            };
+            read_hashes(red_chase_hashes);
+            read_hashes(blue_chase_hashes);
+        }
+    }
+
+    return !ifs.fail() && ifs.peek() == EOF; // Ensure we successfully read the whole file
 }
 
 } // namespace stratego

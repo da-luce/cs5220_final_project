@@ -178,6 +178,28 @@ void test_more_squares_rule() {
     assert(!board.is_legal_move({1, 3, 1, 2}));
 }
 
+void test_save_load_history() {
+    const std::string filename = "test_save_history.bin";
+    Board board1;
+    board1.place_piece(0, 0, PieceType::Scout, Player::Red);
+    board1.place_piece(9, 9, PieceType::Scout, Player::Blue);
+
+    assert(board1.execute_move({0, 0, 0, 1}) == CombatResult::MovedToEmpty); // R
+    assert(board1.execute_move({9, 9, 9, 8}) == CombatResult::MovedToEmpty); // B
+    assert(board1.execute_move({0, 1, 0, 0}) == CombatResult::MovedToEmpty); // R
+    assert(board1.execute_move({9, 8, 9, 9}) == CombatResult::MovedToEmpty); // B
+    assert(board1.execute_move({0, 0, 0, 1}) == CombatResult::MovedToEmpty); // R
+    assert(board1.execute_move({9, 9, 9, 8}) == CombatResult::MovedToEmpty); // B
+    
+    assert(board1.save_to_file(filename));
+
+    Board board2;
+    assert(board2.load_from_file(filename));
+    assert(!board2.is_legal_move({0, 1, 0, 0}));
+
+    std::remove(filename.c_str());
+}
+
 int main(int argc, char* argv[]) {
     if (argc > 1) {
         std::string test_name = argv[1];
@@ -190,6 +212,7 @@ int main(int argc, char* argv[]) {
         else if (test_name == "move_limit") test_move_limit();
         else if (test_name == "two_squares_rule") test_two_squares_rule();
         else if (test_name == "more_squares_rule") test_more_squares_rule();
+        else if (test_name == "save_load_history") test_save_load_history();
         else {
             std::cerr << "Unknown test: " << test_name << "\n";
             return 1;
@@ -208,6 +231,7 @@ int main(int argc, char* argv[]) {
     test_move_limit();
     test_two_squares_rule();
     test_more_squares_rule();
+    test_save_load_history();
 
     std::cout << "All tests passed successfully!\n";
     return 0;
