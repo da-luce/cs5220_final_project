@@ -134,6 +134,34 @@ void Board::initialize_game(GameType type, SetupType setup) {
         
         setup_quick_army(Player::Blue, 0);
         setup_quick_army(Player::Red, 6);
+    } else if (type == GameType::Barrage) {
+        width = 10;
+        height = 10;
+        initialize_empty();
+
+        auto setup_barrage_army = [&](Player player, int start_y) {
+            std::vector<PieceType> deck = {
+                PieceType::Flag, PieceType::Marshal, PieceType::General,
+                PieceType::Miner, PieceType::Spy, PieceType::Bomb,
+                PieceType::Scout, PieceType::Scout
+            };
+            // Pad the remaining 32 squares of the 4-row (40 squares) setup area with Empty pieces
+            deck.insert(deck.end(), 32, PieceType::Empty);
+
+            std::random_device rd;
+            std::mt19937 g(rd());
+            std::shuffle(deck.begin(), deck.end(), g);
+
+            int idx = 0;
+            for (int y = start_y; y < start_y + 4; ++y) {
+                for (int x = 0; x < 10; ++x) {
+                    if (deck[idx] != PieceType::Empty) place_piece(x, y, deck[idx], player);
+                    idx++;
+                }
+            }
+        };
+        setup_barrage_army(Player::Blue, 0);
+        setup_barrage_army(Player::Red, 6);
     }
 }
 

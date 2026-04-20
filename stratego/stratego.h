@@ -19,7 +19,8 @@ enum class Player {
 enum class GameType {
     Classic,
     Tiny,
-    Quick
+    Quick,
+    Barrage
 };
 
 enum class SetupType {

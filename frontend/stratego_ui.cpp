@@ -47,7 +47,7 @@ bool show_start_menu(Board& board) {
     tui::Form form("=== STRATEGO SETUP ===");
 
     while (form.running()) {
-        std::string game_type = form.select("Select Game Type:", {"Classic (10x10)", "Quick (8x8)", "Tiny (4x4)", "Load Game"});
+        std::string game_type = form.select("Select Game Type:", {"Classic (10x10)", "Barrage (10x10)", "Quick (8x8)", "Tiny (4x4)", "Load Game"});
         if (game_type == "") continue;
 
         if (game_type == "Load Game") {
@@ -69,7 +69,9 @@ bool show_start_menu(Board& board) {
             std::string ai = form.select("Select AI Opponent:", {"Random AI"});
             if (ai == "") continue;
 
-            GameType selected_game_type = (game_type == "Classic (10x10)") ? GameType::Classic : ((game_type == "Quick (8x8)") ? GameType::Quick : GameType::Tiny);
+            GameType selected_game_type = (game_type == "Classic (10x10)") ? GameType::Classic : 
+                                          (game_type == "Barrage (10x10)") ? GameType::Barrage :
+                                          (game_type == "Quick (8x8)") ? GameType::Quick : GameType::Tiny;
             SetupType selected_setup_type = (layout == "Probabilistic (Dobby/Oewesok)") ? SetupType::Probabilistic : SetupType::Random;
             
             board.initialize_game(selected_game_type, selected_setup_type);

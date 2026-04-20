@@ -15,6 +15,7 @@ To manage computational complexity, training begins on [Stratego Tiny](https://w
 We use the modern Stratego numbering system, where larger numbers indicate higher piece value. We do not use the Spotter piece for simplicity. We provide three game types:
 
 - Classic: 10x10 grid, 40 pieces
+- Barrage: 10x10 grid, 8 pieces
 - Quick: 8x8 grid, 10 pieces
 - Tiny: 6x6 grid, 6 pieces
 
