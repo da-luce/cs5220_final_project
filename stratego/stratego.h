@@ -70,7 +70,8 @@ enum class CombatResult {
     DefenderWins,
     BothDestroyed,
     FlagCaptured,
-    InvalidMove
+    InvalidMove,
+    Draw
 };
 
 class Board {
@@ -79,12 +80,19 @@ private:
     int height;
     std::vector<Piece> grid;
     Player current_turn;
+    int max_moves;
+    int move_count;
+    std::vector<Move> move_history;
+    std::vector<std::string> red_chase_hashes;
+    std::vector<std::string> blue_chase_hashes;
+
+    [[nodiscard]] std::string get_board_state() const;
 
     // Map 2D coordinates to 1D vector
     [[nodiscard]] inline int index(int x, int y) const { return y * width + x; }
 
 public:
-    Board(int w = 10, int h = 10);
+    Board(int w = 10, int h = 10, int max_moves = 2000);
 
     // Resets board with standard water placement
     void initialize_empty(); 

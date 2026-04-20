@@ -134,6 +134,50 @@ void test_save_load() {
     std::remove(filename.c_str());
 }
 
+void test_move_limit() {
+    Board board(10, 10, 4); // Limit of 4 moves
+    board.place_piece(0, 0, PieceType::Scout, Player::Red);
+    board.place_piece(9, 9, PieceType::Scout, Player::Blue);
+
+    assert(board.execute_move({0, 0, 0, 1}) == CombatResult::MovedToEmpty); // 1
+    assert(board.execute_move({9, 9, 9, 8}) == CombatResult::MovedToEmpty); // 2
+    assert(board.execute_move({0, 1, 0, 2}) == CombatResult::MovedToEmpty); // 3
+    assert(board.execute_move({9, 8, 9, 7}) == CombatResult::Draw);         // 4
+}
+
+void test_two_squares_rule() {
+    Board board;
+    board.place_piece(0, 0, PieceType::Scout, Player::Red);
+    board.place_piece(9, 9, PieceType::Scout, Player::Blue);
+
+    assert(board.execute_move({0, 0, 0, 1}) == CombatResult::MovedToEmpty); // R
+    assert(board.execute_move({9, 9, 9, 8}) == CombatResult::MovedToEmpty); // B
+    assert(board.execute_move({0, 1, 0, 0}) == CombatResult::MovedToEmpty); // R
+    assert(board.execute_move({9, 8, 9, 9}) == CombatResult::MovedToEmpty); // B
+    assert(board.execute_move({0, 0, 0, 1}) == CombatResult::MovedToEmpty); // R
+    assert(board.execute_move({9, 9, 9, 8}) == CombatResult::MovedToEmpty); // B
+    
+    assert(!board.is_legal_move({0, 1, 0, 0})); // R breaks the Two-Squares rule
+}
+
+void test_more_squares_rule() {
+    Board board;
+    board.place_piece(1, 1, PieceType::Scout, Player::Red);
+    board.place_piece(2, 2, PieceType::Scout, Player::Blue);
+
+    assert(board.execute_move({1, 1, 1, 2}) == CombatResult::MovedToEmpty); // R
+    assert(board.execute_move({2, 2, 2, 3}) == CombatResult::MovedToEmpty); // B
+    assert(board.execute_move({1, 2, 2, 2}) == CombatResult::MovedToEmpty); // R
+    assert(board.execute_move({2, 3, 1, 3}) == CombatResult::MovedToEmpty); // B
+    assert(board.execute_move({2, 2, 2, 3}) == CombatResult::MovedToEmpty); // R
+    assert(board.execute_move({1, 3, 1, 2}) == CombatResult::MovedToEmpty); // B
+    assert(board.execute_move({2, 3, 1, 3}) == CombatResult::MovedToEmpty); // R
+    assert(board.execute_move({1, 2, 2, 2}) == CombatResult::MovedToEmpty); // B
+    
+    // R chases 1,3 -> 1,2, recreating the board state!
+    assert(!board.is_legal_move({1, 3, 1, 2}));
+}
+
 int main(int argc, char* argv[]) {
     if (argc > 1) {
         std::string test_name = argv[1];
@@ -143,6 +187,9 @@ int main(int argc, char* argv[]) {
         else if (test_name == "scout_moves") test_scout_moves();
         else if (test_name == "combat_resolutions") test_combat_resolutions();
         else if (test_name == "save_load") test_save_load();
+        else if (test_name == "move_limit") test_move_limit();
+        else if (test_name == "two_squares_rule") test_two_squares_rule();
+        else if (test_name == "more_squares_rule") test_more_squares_rule();
         else {
             std::cerr << "Unknown test: " << test_name << "\n";
             return 1;
@@ -158,6 +205,9 @@ int main(int argc, char* argv[]) {
     test_scout_moves();
     test_combat_resolutions();
     test_save_load();
+    test_move_limit();
+    test_two_squares_rule();
+    test_more_squares_rule();
 
     std::cout << "All tests passed successfully!\n";
     return 0;

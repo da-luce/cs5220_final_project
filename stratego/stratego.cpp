@@ -9,13 +9,17 @@
 
 namespace stratego {
 
-Board::Board(int w, int h) : width(w), height(h), grid(w * h), current_turn(Player::Red) {
+Board::Board(int w, int h, int max_m) : width(w), height(h), grid(w * h), current_turn(Player::Red), max_moves(max_m), move_count(0) {
     initialize_empty();
 }
 
 void Board::initialize_empty() {
     grid.assign(width * height, Piece{PieceType::Empty, Player::None, false});
     current_turn = Player::Red;
+    move_count = 0;
+    move_history.clear();
+    red_chase_hashes.clear();
+    blue_chase_hashes.clear();
 
     // Standard water placement for 10x10 board
     if (width == 10 && height == 10) {
@@ -135,6 +139,16 @@ bool Board::place_piece(int x, int y, PieceType type, Player owner) {
     return true;
 }
 
+std::string Board::get_board_state() const {
+    std::string state;
+    state.reserve(width * height * 2);
+    for (const auto& p : grid) {
+        state += static_cast<char>(p.type);
+        state += static_cast<char>(p.owner);
+    }
+    return state;
+}
+
 bool Board::is_legal_move(const Move& move) const {
     if (move.start_x < 0 || move.start_x >= width || move.start_y < 0 || move.start_y >= height) return false;
     if (move.end_x < 0 || move.end_x >= width || move.end_y < 0 || move.end_y >= height) return false;
@@ -169,11 +183,59 @@ bool Board::is_legal_move(const Move& move) const {
         }
     }
 
+    // Rule 10: Two-Squares Rule
+    if (move_history.size() >= 6) {
+        bool all_same = true;
+        for (int i = 1; i <= 3; ++i) {
+            const Move& prev = move_history[move_history.size() - i * 2];
+            bool same = (prev.start_x == move.start_x && prev.start_y == move.start_y &&
+                         prev.end_x == move.end_x && prev.end_y == move.end_y);
+            bool reverse = (prev.start_x == move.end_x && prev.start_y == move.end_y &&
+                            prev.end_x == move.start_x && prev.end_y == move.start_y);
+            if (!same && !reverse) {
+                all_same = false;
+                break;
+            }
+        }
+        if (all_same) return false;
+    }
+
+    // Rule 11: More-Squares Rule
+    bool is_reverse_of_last = false;
+    if (move_history.size() >= 2) {
+        const Move& my_last = move_history[move_history.size() - 2];
+        if (move.start_x == my_last.end_x && move.start_y == my_last.end_y &&
+            move.end_x == my_last.start_x && move.end_y == my_last.start_y) {
+            is_reverse_of_last = true;
+        }
+    }
+
+    const auto& my_hashes = (current_turn == Player::Red) ? red_chase_hashes : blue_chase_hashes;
+    if (!my_hashes.empty() && end_piece.is_empty() && !is_reverse_of_last) {
+        Board temp = *this;
+        temp.grid[temp.index(move.end_x, move.end_y)] = temp.grid[temp.index(move.start_x, move.start_y)];
+        temp.grid[temp.index(move.start_x, move.start_y)] = Piece{PieceType::Empty, Player::None, false};
+        std::string new_state = temp.get_board_state();
+
+        if (std::find(my_hashes.begin(), my_hashes.end(), new_state) != my_hashes.end()) {
+            return false;
+        }
+    }
+
     return true;
 }
 
 CombatResult Board::execute_move(const Move& move) {
     if (!is_legal_move(move)) return CombatResult::InvalidMove;
+
+    if (!move_history.empty()) {
+        const Move& opp_last = move_history.back();
+        int dist = std::abs(move.start_x - opp_last.end_x) + std::abs(move.start_y - opp_last.end_y);
+        if (dist > 1) { 
+            if (current_turn == Player::Red) blue_chase_hashes.clear();
+            else red_chase_hashes.clear();
+        }
+    }
 
     int start_idx = index(move.start_x, move.start_y);
     int end_idx = index(move.end_x, move.end_y);
@@ -229,7 +291,22 @@ CombatResult Board::execute_move(const Move& move) {
         }
     }
 
+    auto& my_hashes = (current_turn == Player::Red) ? red_chase_hashes : blue_chase_hashes;
+    if (!defender.is_empty()) {
+        my_hashes.clear();
+    } else {
+        my_hashes.push_back(get_board_state());
+    }
+
+    move_history.push_back(move);
+    move_count++;
+
     current_turn = (current_turn == Player::Red) ? Player::Blue : Player::Red;
+    
+    if (result != CombatResult::FlagCaptured && move_count >= max_moves) {
+        return CombatResult::Draw;
+    }
+
     return result;
 }
 
@@ -348,6 +425,10 @@ bool Board::load_from_file(const std::string& filename) {
     width = new_width;
     height = new_height;
     current_turn = static_cast<Player>(turn);
+    move_count = 0;
+    move_history.clear();
+    red_chase_hashes.clear();
+    blue_chase_hashes.clear();
     grid.resize(width * height);
 
     // 3. Read grid data
