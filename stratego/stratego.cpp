@@ -39,25 +39,31 @@ void Board::initialize_empty() {
     }
 }
 
-void Board::initialize_game(GameType type) {
+void Board::initialize_game(GameType type, SetupType setup) {
     if (type == GameType::Classic) {
         width = 10;
         height = 10;
         initialize_empty();
 
-        try {
-            // The path is relative to the build directory where the executable runs.
-            auto distributions = stratego::setup::load_distributions_from_json("../data/piece_dist.json");
-            
-            // Generate setups for both players using the new probabilistic generator.
-            stratego::setup::generate_probabilistic_setup(*this, Player::Red, distributions);
-            stratego::setup::generate_probabilistic_setup(*this, Player::Blue, distributions);
-        } catch (const std::exception& e) {
-            std::cerr << "Warning: Could not load probabilistic setup from JSON (" << e.what() << ").\n"
-                      << "Falling back to random setup." << std::endl;
-            
-            // Fallback to the original random setup if the JSON is missing or invalid.
-            auto setup_army = [&](Player player, int start_y) {
+        bool use_probabilistic = (setup == SetupType::Probabilistic) || (setup == SetupType::Default);
+
+        if (use_probabilistic) {
+            try {
+                // The path is relative to the build directory where the executable runs.
+                auto distributions = stratego::setup::load_distributions_from_json("../data/piece_dist.json");
+                
+                // Generate setups for both players using the new probabilistic generator.
+                stratego::setup::generate_probabilistic_setup(*this, Player::Red, distributions);
+                stratego::setup::generate_probabilistic_setup(*this, Player::Blue, distributions);
+                return;
+            } catch (const std::exception& e) {
+                std::cerr << "Warning: Could not load probabilistic setup from JSON (" << e.what() << ").\n"
+                          << "Falling back to random setup." << std::endl;
+            }
+        }
+        
+        // Fallback to the original random setup if the JSON is missing or invalid.
+        auto setup_army = [&](Player player, int start_y) {
                 std::vector<PieceType> deck = {
                     PieceType::Flag, PieceType::Marshal, PieceType::General, PieceType::Spy
                 };
@@ -83,7 +89,6 @@ void Board::initialize_game(GameType type) {
             };
             setup_army(Player::Blue, 0);
             setup_army(Player::Red, 6);
-        }
     } else if (type == GameType::Tiny) {
         width = 4;
         height = 4;

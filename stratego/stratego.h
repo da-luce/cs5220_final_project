@@ -19,6 +19,12 @@ enum class GameType {
     Quick
 };
 
+enum class SetupType {
+    Default,
+    Random,
+    Probabilistic
+};
+
 // Using numbering where 10 is highest & strongest piece
 enum class PieceType {
     Empty = 0,
@@ -102,7 +108,7 @@ public:
     void initialize_empty(); 
 
     // Initializes board layout and randomized piece placement for a specific game type
-    void initialize_game(GameType type);
+    void initialize_game(GameType type, SetupType setup = SetupType::Default);
 
     // Set pieces during setup phase
     bool place_piece(int x, int y, PieceType type, Player owner);
