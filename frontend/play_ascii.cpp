@@ -8,81 +8,152 @@
 #include <utility>
 #include <string>
 #include "tui.h"
+#include "stratego_ui.h"
 
 using namespace stratego;
 
-// Map pieces to Unicode-friendly 2-character wide strings
-const char* piece_to_str(PieceType type) {
-    switch (type) {
-        case PieceType::Spy: return "S ";
-        case PieceType::Scout: return "2 ";
-        case PieceType::Miner: return "3 ";
-        case PieceType::Sergeant: return "4 ";
-        case PieceType::Lieutenant: return "5 ";
-        case PieceType::Captain: return "6 ";
-        case PieceType::Major: return "7 ";
-        case PieceType::Colonel: return "8 ";
-        case PieceType::General: return "9 ";
-        case PieceType::Marshal: return "★ "; // Star for Marshal
-        case PieceType::Bomb: return "B ";
-        case PieceType::Flag: return "⚑ ";    // Unicode Flag
-        case PieceType::Water: return "≈≈";   // Water Waves
-        default: return "· ";
+void append_combat_msg(CombatResult cr, std::string& msg, bool& game_over) {
+    if (cr == CombatResult::AttackerWins) msg += " Attacker Wins!";
+    else if (cr == CombatResult::DefenderWins) msg += " Defender Wins!";
+    else if (cr == CombatResult::BothDestroyed) msg += " Both destroyed!";
+    else if (cr == CombatResult::FlagCaptured) {
+        msg += " FLAG CAPTURED!";
+        game_over = true;
     }
 }
 
-const char* piece_name(PieceType type) {
-    switch (type) {
-        case PieceType::Spy: return "Spy";
-        case PieceType::Scout: return "Scout";
-        case PieceType::Miner: return "Miner";
-        case PieceType::Sergeant: return "Sergeant";
-        case PieceType::Lieutenant: return "Lieutenant";
-        case PieceType::Captain: return "Captain";
-        case PieceType::Major: return "Major";
-        case PieceType::Colonel: return "Colonel";
-        case PieceType::General: return "General";
-        case PieceType::Marshal: return "Marshal";
-        case PieceType::Bomb: return "Bomb";
-        case PieceType::Flag: return "Flag";
-        default: return "Piece";
+void handle_confrontation(Board& board, GameState& state) {
+    int ch = getch();
+    if (ch == ERR) {
+        state.last_ch = -1;
+        return;
+    }
+    state.last_ch = ch;
+    if (ch == 'q' || ch == 'Q') {
+        state.exit_game = true;
+    } else if (ch == '\n' || ch == '\r' || ch == ' ' || ch == KEY_ENTER) {
+        state.in_confrontation = false;
+        CombatResult res = board.execute_move(state.pending_move);
+        state.status_msg = "Attack resolved.";
+        append_combat_msg(res, state.status_msg, state.game_over);
+        state.last_ch = -1;
     }
 }
 
-bool show_start_menu(Board& board) {
-    tui::Form form("=== STRATEGO SETUP ===");
+void handle_human_turn(Board& board, GameState& state) {
+    int ch = getch();
+    if (ch == ERR) { // No key was pressed in the last 100ms
+        state.last_ch = -1;
+        return;
+    }
+    
+    state.last_ch = ch;
+    int w = board.get_width();
+    int h = board.get_height();
 
-    while (form.running()) {
-        std::string game_type = form.select("Select Game Type:", {"Classic (10x10)", "Quick (8x8)", "Tiny (4x4)", "Load Game"});
-        if (game_type == "") continue;
+    if (state.last_ch == 'q' || state.last_ch == 'Q') state.exit_game = true;
+    else if (state.last_ch == 'c' || state.last_ch == 'C') {
+        state.casual_mode = !state.casual_mode;
+        state.status_msg = state.casual_mode ? "Casual mode ON (revealed pieces stay visible)." : "Casual mode OFF (perfect memory disabled).";
+        state.last_ch = -1;
+    }
+    else if (state.last_ch == 's' || state.last_ch == 'S') {
+        state.status_msg = "Save game as: ";
+        move(15, 0); clrtoeol();
+        mvprintw(15, 0, "%s", state.status_msg.c_str());
 
-        if (game_type == "Load Game") {
-            std::string filename = form.text_input("Enter filename:");
-            if (filename == "") continue;
-            
-            if (board.load_from_file(filename)) {
-                return true;
+        char filename_c[256] = {0};
+        timeout(-1); // Disable timeout for blocking input
+        curs_set(1); // Show cursor for typing
+        echo();
+        mvgetstr(15, state.status_msg.length(), filename_c); // Get string at the prompt location
+        noecho();
+        curs_set(0); // Hide cursor again
+        timeout(100); // Re-enable non-blocking getch
+
+        if (std::string(filename_c).length() > 0 && board.save_to_file(filename_c)) {
+            state.status_msg = "Game saved to " + std::string(filename_c) + ".";
+        } else {
+            state.status_msg = "Save cancelled or failed.";
+        }
+        state.last_ch = -1; // Prevent 'S' from staying highlighted
+    }
+    else if ((state.last_ch == KEY_UP || state.last_ch == 'k') && state.cursor_y > 0) state.cursor_y--;
+    else if ((state.last_ch == KEY_DOWN || state.last_ch == 'j') && state.cursor_y < h - 1) state.cursor_y++;
+    else if ((state.last_ch == KEY_LEFT || state.last_ch == 'h') && state.cursor_x > 0) state.cursor_x--;
+    else if ((state.last_ch == KEY_RIGHT || state.last_ch == 'l') && state.cursor_x < w - 1) state.cursor_x++;
+    else if (state.last_ch == '\n' || state.last_ch == '\r' || state.last_ch == ' ' || state.last_ch == KEY_ENTER) {
+        if (state.selected_x == -1) {
+            Piece p = board.get_piece(state.cursor_x, state.cursor_y);
+            if (p.owner == Player::Red && p.is_mobile()) {
+                state.selected_x = state.cursor_x;
+                state.selected_y = state.cursor_y;
+                state.status_msg = std::string(piece_name(p.type)) + " selected. Move to destination and press ENTER.";
             } else {
-                form.set_error("Error: Could not load file.");
+                state.status_msg = "Invalid piece! Select your own mobile piece.";
             }
         } else {
-            std::vector<std::string> layouts = {"Random"};
-            if (game_type == "Classic (10x10)") layouts = {"Probabilistic (Dobby/Oewesok)", "Random"};
-            
-            std::string layout = form.select("Select Starting Layout:", layouts);
-            if (layout == "") continue;
+            if (state.selected_x == state.cursor_x && state.selected_y == state.cursor_y) {
+                state.selected_x = -1; state.selected_y = -1;
+                state.status_msg = "Piece deselected.";
+            } else {
+                Move m{state.selected_x, state.selected_y, state.cursor_x, state.cursor_y};
+                if (board.is_legal_move(m)) {
+                    Piece target = board.get_piece(state.cursor_x, state.cursor_y);
+                    if (!target.is_empty()) {
+                        state.in_confrontation = true;
+                        state.pending_move = m;
+                        state.pending_attacker_type = board.get_piece(state.selected_x, state.selected_y).type;
+                        state.pending_defender_type = target.type;
+                        state.status_msg = "Confrontation! Press ENTER to resolve.";
+                        state.selected_x = -1; state.selected_y = -1;
+                    } else {
+                        CombatResult res = board.execute_move(m);
+                        state.selected_x = -1; state.selected_y = -1;
+                        state.status_msg = "You moved.";
+                        append_combat_msg(res, state.status_msg, state.game_over);
+                    }
+                } else {
+                    state.status_msg = "Illegal move! Try again or press ESC to deselect.";
+                }
+            }
+        }
+    } else if (state.last_ch == 27) { // ESC key
+        state.selected_x = -1; state.selected_y = -1;
+        state.status_msg = "Piece deselected.";
+    }
+}
 
-            std::string ai = form.select("Select AI Opponent:", {"Random AI"});
-            if (ai == "") continue;
-
-            GameType selected_game_type = (game_type == "Classic (10x10)") ? GameType::Classic : ((game_type == "Quick (8x8)") ? GameType::Quick : GameType::Tiny);
-            SetupType selected_setup_type = (layout == "Probabilistic (Dobby/Oewesok)") ? SetupType::Probabilistic : SetupType::Random;
-            
-            board.initialize_game(selected_game_type, selected_setup_type);
-            return true;
+void handle_ai_turn(Board& board, GameState& state, std::mt19937& gen) {
+    state.status_msg = "AI is thinking...";
+    attron(COLOR_PAIR(7));
+    move(15, 0); clrtoeol();
+    mvprintw(15, 0, "%s", state.status_msg.c_str());
+    attroff(COLOR_PAIR(7));
+    refresh();
+    napms(600); // 600ms delay so AI move is visible
+    
+    std::vector<Move> legal_moves = board.get_all_legal_moves(Player::Blue);
+    if (legal_moves.empty()) {
+        state.status_msg = "VICTORY! The AI has no legal moves left.";
+        state.game_over = true;
+    } else {
+        std::uniform_int_distribution<> dist(0, legal_moves.size() - 1);
+        Move m = legal_moves[dist(gen)];
+        
+        Piece target = board.get_piece(m.end_x, m.end_y);
+        if (!target.is_empty()) {
+            state.in_confrontation = true;
+            state.pending_move = m;
+            state.pending_attacker_type = board.get_piece(m.start_x, m.start_y).type;
+            state.pending_defender_type = target.type;
+            state.status_msg = "AI Attacks! Press ENTER to resolve.";
+        } else {
+            CombatResult res = board.execute_move(m);
+            state.status_msg = "AI moved (" + std::to_string(m.start_x) + "," + std::to_string(m.start_y) + ") -> (" + std::to_string(m.end_x) + "," + std::to_string(m.end_y) + ").";
+            append_combat_msg(res, state.status_msg, state.game_over);
         }
     }
-    return false;
 }
 
 int main() {
@@ -98,169 +169,14 @@ int main() {
     std::random_device rd;
     std::mt19937 gen(rd());
 
-    int cursor_x = 0, cursor_y = board.get_height() > 4 ? 6 : board.get_height() - 1;
-    int selected_x = -1, selected_y = -1;
-    bool exit_game = false;
-    bool game_over = false;
-    bool in_confrontation = false;
-    bool casual_mode = false;
-    Move pending_move;
-    PieceType pending_attacker_type;
-    PieceType pending_defender_type;
-    int last_ch = -1;
-    std::string status_msg = "Welcome! You are RED. Use Arrows to move, ENTER to select.";
+    GameState state;
+    state.cursor_x = 0;
+    state.cursor_y = board.get_height() > 4 ? 6 : board.get_height() - 1;
 
-    auto append_combat_msg = [&](CombatResult cr, std::string& msg) {
-        if (cr == CombatResult::AttackerWins) msg += " Attacker Wins!";
-        else if (cr == CombatResult::DefenderWins) msg += " Defender Wins!";
-        else if (cr == CombatResult::BothDestroyed) msg += " Both destroyed!";
-        else if (cr == CombatResult::FlagCaptured) {
-            msg += " FLAG CAPTURED!";
-            game_over = true;
-        }
-    };
+    while (!state.exit_game) {
+        render_board(board, state);
 
-    while (!exit_game) {
-        erase(); // Use erase() instead of clear() to avoid flickering during 100ms redraws
-        mvprintw(0, 0, "=== STRATEGO ===");
-        
-        std::vector<Move> active_legal_moves;
-        if (selected_x != -1 && selected_y != -1) {
-            active_legal_moves = board.get_legal_moves_for_piece(Player::Red, selected_x, selected_y);
-        }
-        
-        // Render the ASCII Grid
-        int w = board.get_width();
-        int h = board.get_height();
-
-        mvprintw(1, 3, "┌");
-        for (int x = 0; x < w; ++x) printw("───");
-        printw("┐");
-
-        for (int y = 0; y < h; ++y) {
-            mvprintw(2 + y, 0, " %d │", y);
-            for (int x = 0; x < w; ++x) {
-                Piece p = board.get_piece(x, y);
-                bool is_cursor = (x == cursor_x && y == cursor_y) && !game_over;
-                bool is_selected = (x == selected_x && y == selected_y);
-
-                bool is_valid_empty = false;
-                bool is_valid_attack = false;
-                for (const auto& m : active_legal_moves) {
-                    if (m.end_x == x && m.end_y == y) {
-                        if (p.is_empty()) is_valid_empty = true;
-                        else is_valid_attack = true;
-                        break;
-                    }
-                }
-
-                int color_pair = 0;
-                bool is_confrontation_target = (in_confrontation && x == pending_move.end_x && y == pending_move.end_y);
-                bool is_confrontation_source = (in_confrontation && x == pending_move.start_x && y == pending_move.start_y);
-
-                if (is_selected) color_pair = 6;
-                else if (is_cursor) color_pair = 5;
-                else if (is_valid_attack) color_pair = 9;
-                else if (is_valid_empty) color_pair = 8;
-                else if (is_confrontation_source) color_pair = 0;
-                else if (is_confrontation_target) color_pair = 0;
-                else if (p.is_obstacle()) color_pair = 4;
-                else if (!p.is_empty()) {
-                    if (p.owner == Player::Red) color_pair = 1;
-                    else color_pair = (casual_mode && p.revealed) ? 2 : 3;
-                    if (game_over && p.owner == Player::Blue) color_pair = 2;
-                }
-
-                if (color_pair) attron(COLOR_PAIR(color_pair));
-
-                if (is_confrontation_source) {
-                    printw("·  ");
-                } else if (is_confrontation_target) {
-                    std::string a_str = piece_to_str(pending_attacker_type);
-                    if (!a_str.empty() && a_str.back() == ' ') a_str.pop_back();
-                    std::string d_str = piece_to_str(pending_defender_type);
-                    if (!d_str.empty() && d_str.back() == ' ') d_str.pop_back();
-
-                    Player current_player = board.get_current_turn();
-                    int attacker_color = (current_player == Player::Red) ? 1 : 2;
-                    int defender_color = (current_player == Player::Red) ? 2 : 1;
-
-                    if (color_pair) attroff(COLOR_PAIR(color_pair));
-                    
-                    attron(COLOR_PAIR(attacker_color));
-                    printw("%s", a_str.c_str());
-                    attroff(COLOR_PAIR(attacker_color));
-                    
-                    attron(COLOR_PAIR(defender_color));
-                    printw("%s", d_str.c_str());
-                    attroff(COLOR_PAIR(defender_color));
-                    
-                    if (color_pair) attron(COLOR_PAIR(color_pair));
-                    printw(" ");
-                }
-                else if (p.is_obstacle()) printw("≈≈ ");
-                else if (p.is_empty()) printw("·  ");
-                else if (p.owner == Player::Red) printw("%s ", piece_to_str(p.type));
-                else {
-                    if (game_over || (casual_mode && p.revealed)) printw("%s ", piece_to_str(p.type));
-                    else printw("?  ");
-                }
-
-                if (color_pair) attroff(COLOR_PAIR(color_pair));
-            }
-            printw("│");
-        }
-        mvprintw(2 + h, 3, "└");
-        for (int x = 0; x < w; ++x) printw("───");
-        printw("┘");
-
-        mvprintw(3 + h, 4, "");
-        for (int x = 0; x < w; ++x) {
-            if (x == 0) printw(" %d", x);
-            else printw("  %d", x);
-        }
-
-        // Print dynamic messages below the board
-        attron(COLOR_PAIR(7));
-        move(15, 0); clrtoeol();
-        mvprintw(15, 0, "%s", status_msg.c_str());
-        move(16, 0); clrtoeol();
-        if (game_over) {
-            mvprintw(16, 0, "Game Over. Press 'q' to exit.");
-        } else {
-            mvprintw(16, 0, "Select a piece and move it to a highlighted square.");
-        }
-        attroff(COLOR_PAIR(7));
-
-        mvprintw(18, 4, "       ");
-        if (last_ch == KEY_UP || last_ch == 'k') attron(A_REVERSE);
-        printw("↑/k");
-        if (last_ch == KEY_UP || last_ch == 'k') attroff(A_REVERSE);
-
-        move(19, 4);
-        printw(" ");
-        if (last_ch == KEY_LEFT || last_ch == 'h') attron(A_REVERSE);
-        printw("←/h");
-        if (last_ch == KEY_LEFT || last_ch == 'h') attroff(A_REVERSE);
-        printw("   ");
-
-        if (last_ch == KEY_DOWN || last_ch == 'j') attron(A_REVERSE);
-        printw("↓/j");
-        if (last_ch == KEY_DOWN || last_ch == 'j') attroff(A_REVERSE);
-        printw("   ");
-
-        if (last_ch == KEY_RIGHT || last_ch == 'l') attron(A_REVERSE);
-        printw("→/l");
-        if (last_ch == KEY_RIGHT || last_ch == 'l') attroff(A_REVERSE);
-
-        mvprintw(18, 25, "[ENTER] Select / Move");
-        mvprintw(19, 25, "[ESC]   Deselect");
-        mvprintw(20, 25, "[S]     Save Game");
-        mvprintw(21, 25, "[C]     Toggle Casual");
-        mvprintw(22, 25, "[Q]     Quit");
-        refresh();
-
-        if (game_over) {
+        if (state.game_over) {
             timeout(-1); // Restore blocking getch indefinitely for the exit screen
             int ch = getch();
             if (ch == 'q' || ch == 'Q') {
@@ -269,138 +185,15 @@ int main() {
             continue;
         }
 
-        if (in_confrontation) {
-            int ch = getch();
-            if (ch == ERR) {
-                last_ch = -1;
-                continue;
-            }
-            last_ch = ch;
-            if (ch == 'q' || ch == 'Q') {
-                exit_game = true;
-            } else if (ch == '\n' || ch == '\r' || ch == ' ' || ch == KEY_ENTER) {
-                in_confrontation = false;
-                CombatResult res = board.execute_move(pending_move);
-                status_msg = "Attack resolved.";
-                append_combat_msg(res, status_msg);
-                last_ch = -1;
-            }
+        if (state.in_confrontation) {
+            handle_confrontation(board, state);
             continue;
         }
 
-        CombatResult res = CombatResult::MovedToEmpty;
-        
         if (board.get_current_turn() == Player::Red) {
-            int ch = getch();
-            if (ch == ERR) { // No key was pressed in the last 100ms
-                last_ch = -1;
-                continue;
-            }
-            
-            last_ch = ch;
-            if (last_ch == 'q' || last_ch == 'Q') exit_game = true;
-            else if (last_ch == 'c' || last_ch == 'C') {
-                casual_mode = !casual_mode;
-                status_msg = casual_mode ? "Casual mode ON (revealed pieces stay visible)." : "Casual mode OFF (perfect memory disabled).";
-                last_ch = -1;
-                continue;
-            }
-            else if (last_ch == 's' || last_ch == 'S') {
-                status_msg = "Save game as: ";
-                move(15, 0); clrtoeol();
-                mvprintw(15, 0, "%s", status_msg.c_str());
-
-                char filename_c[256] = {0};
-                timeout(-1); // Disable timeout for blocking input
-                curs_set(1); // Show cursor for typing
-                echo();
-                mvgetstr(15, status_msg.length(), filename_c); // Get string at the prompt location
-                noecho();
-                curs_set(0); // Hide cursor again
-                timeout(100); // Re-enable non-blocking getch
-
-                if (std::string(filename_c).length() > 0 && board.save_to_file(filename_c)) {
-                    status_msg = "Game saved to " + std::string(filename_c) + ".";
-                } else {
-                    status_msg = "Save cancelled or failed.";
-                }
-                last_ch = -1; // Prevent 'S' from staying highlighted
-                continue;     // Redraw screen with the new status message
-            }
-        else if ((last_ch == KEY_UP || last_ch == 'k') && cursor_y > 0) cursor_y--;
-        else if ((last_ch == KEY_DOWN || last_ch == 'j') && cursor_y < h - 1) cursor_y++;
-        else if ((last_ch == KEY_LEFT || last_ch == 'h') && cursor_x > 0) cursor_x--;
-        else if ((last_ch == KEY_RIGHT || last_ch == 'l') && cursor_x < w - 1) cursor_x++;
-            else if (last_ch == '\n' || last_ch == '\r' || last_ch == ' ' || last_ch == KEY_ENTER) {
-                if (selected_x == -1) {
-                    Piece p = board.get_piece(cursor_x, cursor_y);
-                    if (p.owner == Player::Red && p.is_mobile()) {
-                        selected_x = cursor_x;
-                        selected_y = cursor_y;
-                        status_msg = std::string(piece_name(p.type)) + " selected. Move to destination and press ENTER.";
-                    } else {
-                        status_msg = "Invalid piece! Select your own mobile piece.";
-                    }
-                } else {
-                    if (selected_x == cursor_x && selected_y == cursor_y) {
-                        selected_x = -1; selected_y = -1;
-                        status_msg = "Piece deselected.";
-                    } else {
-                        Move m{selected_x, selected_y, cursor_x, cursor_y};
-                        if (board.is_legal_move(m)) {
-                            Piece target = board.get_piece(cursor_x, cursor_y);
-                            if (!target.is_empty()) {
-                                in_confrontation = true;
-                                pending_move = m;
-                                pending_attacker_type = board.get_piece(selected_x, selected_y).type;
-                                pending_defender_type = target.type;
-                                status_msg = "Confrontation! Press ENTER to resolve.";
-                                selected_x = -1; selected_y = -1;
-                            } else {
-                                res = board.execute_move(m);
-                                selected_x = -1; selected_y = -1;
-                                status_msg = "You moved.";
-                                append_combat_msg(res, status_msg);
-                            }
-                        } else {
-                            status_msg = "Illegal move! Try again or press ESC to deselect.";
-                        }
-                    }
-                }
-            } else if (last_ch == 27) { // ESC key
-                selected_x = -1; selected_y = -1;
-                status_msg = "Piece deselected.";
-            }
+            handle_human_turn(board, state);
         } else {
-            status_msg = "AI is thinking...";
-            attron(COLOR_PAIR(7));
-            move(15, 0); clrtoeol();
-            mvprintw(15, 0, "%s", status_msg.c_str());
-            attroff(COLOR_PAIR(7));
-            refresh();
-            napms(600); // 600ms delay so AI move is visible
-            
-            std::vector<Move> legal_moves = board.get_all_legal_moves(Player::Blue);
-            if (legal_moves.empty()) {
-                status_msg = "VICTORY! The AI has no legal moves left.";
-                game_over = true;
-            } else {
-                std::uniform_int_distribution<> dist(0, legal_moves.size() - 1);
-                Move m = legal_moves[dist(gen)];
-                
-                Piece target = board.get_piece(m.end_x, m.end_y);
-                if (!target.is_empty()) {
-                    in_confrontation = true;
-                    pending_move = m;
-                    pending_attacker_type = board.get_piece(m.start_x, m.start_y).type;
-                    pending_defender_type = target.type;
-                    status_msg = "AI Attacks! Press ENTER to resolve.";
-                } else {
-                    res = board.execute_move(m);
-                    status_msg = "AI moved (" + std::to_string(m.start_x) + "," + std::to_string(m.start_y) + ") -> (" + std::to_string(m.end_x) + "," + std::to_string(m.end_y) + ").";
-                    append_combat_msg(res, status_msg);
-                }
-            }
+            handle_ai_turn(board, state, gen);
         }
     }
 
