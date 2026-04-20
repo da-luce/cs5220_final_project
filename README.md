@@ -12,6 +12,29 @@ This project explores the scalability and stability tradeoffs of parallelized Pr
 
 To manage computational complexity, training begins on [Stratego Tiny](https://www.diva-portal.org/smash/get/diva2:1656447/FULLTEXT01.pdf#section.2.1) (a reduced state/action space variant) and will progressively scale toward the full board state.
 
+
+## Building
+
+```shell
+mkdir build
+cd build
+cmake ..
+make
+```
+### Tests
+
+```shell
+ctest --output-on-failure
+```
+
+## Running terminal game
+
+```
+./frontend/play_ascii.cpp
+```
+
+# TODO: Training on Perlmutter
+
 ## Architecture & Tech Stack
 
 This project is built for high-performance execution on the [Perlmutter](https://www.nersc.gov/what-we-do/computing-for-science/perlmutter) supercomputer. To minimize overhead, the entire pipeline is a pure C++ implementation.
@@ -33,5 +56,3 @@ As opposed to directly following established RL frameworks like OpenSpiel, we op
 1. **Parallel Rollouts:** Multiple workers independently simulate games against a uniformly sampled pool of past checkpoints.
 2. **Synchronization:** Gradients and model parameters are synchronized across GPUs using NCCL. We are evaluating both synchronous (stable but bottlenecked) and asynchronous (higher throughput but noisier) update strategies.
 3. **Optimization:** The PPO clipped surrogate loss is calculated, and weights are updated via mini-batches.
-
-## TODO: Running on Perlmutter
