@@ -168,4 +168,39 @@ std::vector<Move> Board::get_all_legal_moves(Player player) const {
     return moves;
 }
 
+std::vector<Move> Board::get_legal_moves_for_piece(Player player, int x, int y) const {
+    std::vector<Move> moves;
+
+    // Must be the player's turn, and coordinates must be within bounds
+    if (player != current_turn) return moves;
+    if (x < 0 || x >= width || y < 0 || y >= height) return moves;
+
+    Piece p = grid[index(x, y)];
+    
+    // The piece must belong to the requesting player and be mobile (not a flag/bomb/empty)
+    if (p.owner != player || !p.is_mobile()) return moves;
+
+    int dx[] = {0, 0, -1, 1};
+    int dy[] = {-1, 1, 0, 0};
+
+    int max_dist = (p.type == PieceType::Scout) ? std::max(width, height) : 1;
+
+    for (int dir = 0; dir < 4; ++dir) {
+        for (int dist = 1; dist <= max_dist; ++dist) {
+            Move m{x, y, x + dx[dir] * dist, y + dy[dir] * dist};
+            
+            // is_legal_move handles bounds, obstacles, and friendly fire checks
+            if (is_legal_move(m)) {
+                moves.push_back(m);
+            } else {
+                // For scouts, if a move is invalid (e.g., hits an obstacle or board edge), 
+                // all further moves in this direction are also invalid.
+                break; 
+            }
+        }
+    }
+
+    return moves;
+}
+
 } // namespace stratego

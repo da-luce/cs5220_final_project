@@ -96,6 +96,7 @@ public:
     [[nodiscard]] Piece get_piece(int x, int y) const;
     [[nodiscard]] Player get_current_turn() const { return current_turn; }
     [[nodiscard]] std::vector<Move> get_all_legal_moves(Player player) const;
+    [[nodiscard]] std::vector<Move> get_legal_moves_for_piece(Player player, int x, int y) const;
 };
 
 } // namespace stratego

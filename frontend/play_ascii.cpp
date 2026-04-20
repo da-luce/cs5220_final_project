@@ -61,16 +61,20 @@ int main() {
     noecho();
     keypad(stdscr, TRUE);
     curs_set(0); // Hide standard terminal cursor
+    timeout(100); // 100ms timeout for getch() to allow key release detection
 
     if (has_colors()) {
         start_color();
-        init_pair(1, COLOR_RED, COLOR_BLACK);
-        init_pair(2, COLOR_BLUE, COLOR_BLACK);
-        init_pair(3, COLOR_MAGENTA, COLOR_BLACK);     // AI hidden
+        use_default_colors();
+        init_pair(1, COLOR_RED, -1);
+        init_pair(2, COLOR_BLUE, -1);
+        init_pair(3, COLOR_MAGENTA, -1);              // AI hidden
         init_pair(4, COLOR_CYAN, COLOR_BLUE);         // Water
         init_pair(5, COLOR_BLACK, COLOR_WHITE);       // Cursor Highlight
         init_pair(6, COLOR_BLACK, COLOR_YELLOW);      // Selected Piece
-        init_pair(7, COLOR_GREEN, COLOR_BLACK);       // Text Info
+        init_pair(7, COLOR_GREEN, -1);                // Text Info
+        init_pair(8, COLOR_BLACK, COLOR_GREEN);       // Valid Move (Empty)
+        init_pair(9, COLOR_WHITE, COLOR_RED);         // Valid Move (Attack)
     }
 
     Board board;
@@ -84,6 +88,7 @@ int main() {
     int selected_x = -1, selected_y = -1;
     bool exit_game = false;
     bool game_over = false;
+    int last_ch = -1;
     std::string status_msg = "Welcome! You are RED. Use Arrows to move, ENTER to select.";
 
     auto append_combat_msg = [&](CombatResult cr, std::string& msg) {
@@ -97,11 +102,16 @@ int main() {
     };
 
     while (!exit_game) {
-        clear();
-        mvprintw(0, 0, "=== STRATEGO NCURSES EDITION ===");
+        erase(); // Use erase() instead of clear() to avoid flickering during 100ms redraws
+        mvprintw(0, 0, "=== STRATEGO ===");
+        
+        std::vector<Move> active_legal_moves;
+        if (selected_x != -1 && selected_y != -1) {
+            active_legal_moves = board.get_legal_moves_for_piece(Player::Red, selected_x, selected_y);
+        }
         
         // Render the ASCII Grid
-        mvprintw(1, 4, "┌──────────────────────────────┐");
+        mvprintw(1, 3, "┌──────────────────────────────┐");
         for (int y = 0; y < 10; ++y) {
             mvprintw(2 + y, 0, " %d │", y);
             for (int x = 0; x < 10; ++x) {
@@ -109,9 +119,21 @@ int main() {
                 bool is_cursor = (x == cursor_x && y == cursor_y) && !game_over;
                 bool is_selected = (x == selected_x && y == selected_y);
 
+                bool is_valid_empty = false;
+                bool is_valid_attack = false;
+                for (const auto& m : active_legal_moves) {
+                    if (m.end_x == x && m.end_y == y) {
+                        if (p.is_empty()) is_valid_empty = true;
+                        else is_valid_attack = true;
+                        break;
+                    }
+                }
+
                 int color_pair = 0;
                 if (is_selected) color_pair = 6;
                 else if (is_cursor) color_pair = 5;
+                else if (is_valid_attack) color_pair = 9;
+                else if (is_valid_empty) color_pair = 8;
                 else if (p.is_obstacle()) color_pair = 4;
                 else if (!p.is_empty()) {
                     if (p.owner == Player::Red) color_pair = 1;
@@ -132,21 +154,49 @@ int main() {
             }
             printw("│");
         }
-        mvprintw(12, 4, "└──────────────────────────────┘");
-        mvprintw(13, 5, "  0  1  2  3  4  5  6  7  8  9");
+        mvprintw(12, 3, "└──────────────────────────────┘");
+        mvprintw(13, 4, " 0  1  2  3  4  5  6  7  8  9");
 
         // Print dynamic messages below the board
         attron(COLOR_PAIR(7));
+        move(15, 0); clrtoeol();
         mvprintw(15, 0, "%s", status_msg.c_str());
+        move(16, 0); clrtoeol();
         if (game_over) {
             mvprintw(16, 0, "Game Over. Press any key to exit.");
         } else {
-            mvprintw(16, 0, "Press 'q' to quit. Press 'ESC' to deselect.");
+            mvprintw(16, 0, "Select a piece and move it to a highlighted square.");
         }
         attroff(COLOR_PAIR(7));
+
+        mvprintw(18, 4, "       ");
+        if (last_ch == KEY_UP || last_ch == 'k') attron(A_REVERSE);
+        printw("↑/k");
+        if (last_ch == KEY_UP || last_ch == 'k') attroff(A_REVERSE);
+
+        move(19, 4);
+        printw(" ");
+        if (last_ch == KEY_LEFT || last_ch == 'h') attron(A_REVERSE);
+        printw("←/h");
+        if (last_ch == KEY_LEFT || last_ch == 'h') attroff(A_REVERSE);
+        printw("   ");
+
+        if (last_ch == KEY_DOWN || last_ch == 'j') attron(A_REVERSE);
+        printw("↓/j");
+        if (last_ch == KEY_DOWN || last_ch == 'j') attroff(A_REVERSE);
+        printw("   ");
+
+        if (last_ch == KEY_RIGHT || last_ch == 'l') attron(A_REVERSE);
+        printw("→/l");
+        if (last_ch == KEY_RIGHT || last_ch == 'l') attroff(A_REVERSE);
+
+        mvprintw(18, 25, "[ENTER] Select / Move");
+        mvprintw(19, 25, "[ESC]   Deselect");
+        mvprintw(20, 25, "[Q]     Quit");
         refresh();
 
         if (game_over) {
+            timeout(-1); // Restore blocking getch indefinitely for the exit screen
             getch();
             break;
         }
@@ -155,12 +205,18 @@ int main() {
         
         if (board.get_current_turn() == Player::Red) {
             int ch = getch();
-            if (ch == 'q' || ch == 'Q') exit_game = true;
-            else if (ch == KEY_UP && cursor_y > 0) cursor_y--;
-            else if (ch == KEY_DOWN && cursor_y < 9) cursor_y++;
-            else if (ch == KEY_LEFT && cursor_x > 0) cursor_x--;
-            else if (ch == KEY_RIGHT && cursor_x < 9) cursor_x++;
-            else if (ch == '\n' || ch == '\r' || ch == ' ' || ch == KEY_ENTER) {
+            if (ch == ERR) { // No key was pressed in the last 100ms
+                last_ch = -1;
+                continue;
+            }
+            
+            last_ch = ch;
+            if (last_ch == 'q' || last_ch == 'Q') exit_game = true;
+            else if ((last_ch == KEY_UP || last_ch == 'k') && cursor_y > 0) cursor_y--;
+            else if ((last_ch == KEY_DOWN || last_ch == 'j') && cursor_y < 9) cursor_y++;
+            else if ((last_ch == KEY_LEFT || last_ch == 'h') && cursor_x > 0) cursor_x--;
+            else if ((last_ch == KEY_RIGHT || last_ch == 'l') && cursor_x < 9) cursor_x++;
+            else if (last_ch == '\n' || last_ch == '\r' || last_ch == ' ' || last_ch == KEY_ENTER) {
                 if (selected_x == -1) {
                     Piece p = board.get_piece(cursor_x, cursor_y);
                     if (p.owner == Player::Red && p.is_mobile()) {
@@ -186,13 +242,14 @@ int main() {
                         }
                     }
                 }
-            } else if (ch == 27) { // ESC key
+            } else if (last_ch == 27) { // ESC key
                 selected_x = -1; selected_y = -1;
                 status_msg = "Piece deselected.";
             }
         } else {
             status_msg = "AI is thinking...";
             attron(COLOR_PAIR(7));
+            move(15, 0); clrtoeol();
             mvprintw(15, 0, "%s", status_msg.c_str());
             attroff(COLOR_PAIR(7));
             refresh();
