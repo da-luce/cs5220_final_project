@@ -1,5 +1,5 @@
 # Create a library for the core Stratego logic
-add_library(stratego_core stratego.cpp setup_generator.cpp)
+add_library(stratego_core stratego.cpp setup_generator.cpp rules_engine.cpp game_serializer.cpp)
 target_include_directories(stratego_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(stratego_core PUBLIC nlohmann_json::nlohmann_json)
 

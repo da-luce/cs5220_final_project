@@ -7,6 +7,9 @@
 
 namespace stratego {
 
+class RulesEngine;
+class GameSerializer;
+
 enum class Player {
     Red,
     Blue,
@@ -102,6 +105,9 @@ private:
     [[nodiscard]] inline int index(int x, int y) const { return y * width + x; }
 
 public:
+    friend class RulesEngine;
+    friend class GameSerializer;
+
     Board(int w = 10, int h = 10, int max_moves = 2000);
 
     // Resets board with standard water placement
@@ -113,23 +119,23 @@ public:
     // Set pieces during setup phase
     bool place_piece(int x, int y, PieceType type, Player owner);
 
-    // Validates a move
+    // Move validation and generation interfaces
     [[nodiscard]] bool is_legal_move(const Move& move) const;
+    [[nodiscard]] std::vector<Move> get_all_legal_moves(Player player) const;
+    [[nodiscard]] std::vector<Move> get_legal_moves_for_piece(Player player, int x, int y) const;
 
     // Executes the move, handles combat, updates "revealed" statuses, and swaps turn
     CombatResult execute_move(const Move& move);
+
+    // Save/Load game state to a binary file
+    [[nodiscard]] bool save_to_file(const std::string& filename) const;
+    bool load_from_file(const std::string& filename);
 
     // Frontend getters
     [[nodiscard]] int get_width() const { return width; }
     [[nodiscard]] int get_height() const { return height; }
     [[nodiscard]] Piece get_piece(int x, int y) const;
     [[nodiscard]] Player get_current_turn() const { return current_turn; }
-    [[nodiscard]] std::vector<Move> get_all_legal_moves(Player player) const;
-    [[nodiscard]] std::vector<Move> get_legal_moves_for_piece(Player player, int x, int y) const;
-
-    // Save/Load game state to a binary file
-    [[nodiscard]] bool save_to_file(const std::string& filename) const;
-    bool load_from_file(const std::string& filename);
 };
 
 } // namespace stratego
