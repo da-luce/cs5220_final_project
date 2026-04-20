@@ -29,28 +29,21 @@ const char* piece_to_str(PieceType type) {
     }
 }
 
-void setup_random_army(Board& board, Player player, int start_y) {
-    std::vector<PieceType> deck = {
-        PieceType::Flag, PieceType::Marshal, PieceType::General, PieceType::Spy
-    };
-    deck.insert(deck.end(), 6, PieceType::Bomb);
-    deck.insert(deck.end(), 8, PieceType::Scout);
-    deck.insert(deck.end(), 5, PieceType::Miner);
-    deck.insert(deck.end(), 4, PieceType::Sergeant);
-    deck.insert(deck.end(), 4, PieceType::Lieutenant);
-    deck.insert(deck.end(), 4, PieceType::Captain);
-    deck.insert(deck.end(), 3, PieceType::Major);
-    deck.insert(deck.end(), 2, PieceType::Colonel);
-
-    std::random_device rd;
-    std::mt19937 g(rd());
-    std::shuffle(deck.begin(), deck.end(), g);
-
-    int idx = 0;
-    for (int y = start_y; y < start_y + 4; ++y) {
-        for (int x = 0; x < 10; ++x) {
-            board.place_piece(x, y, deck[idx++], player);
-        }
+const char* piece_name(PieceType type) {
+    switch (type) {
+        case PieceType::Spy: return "Spy";
+        case PieceType::Scout: return "Scout";
+        case PieceType::Miner: return "Miner";
+        case PieceType::Sergeant: return "Sergeant";
+        case PieceType::Lieutenant: return "Lieutenant";
+        case PieceType::Captain: return "Captain";
+        case PieceType::Major: return "Major";
+        case PieceType::Colonel: return "Colonel";
+        case PieceType::General: return "General";
+        case PieceType::Marshal: return "Marshal";
+        case PieceType::Bomb: return "Bomb";
+        case PieceType::Flag: return "Flag";
+        default: return "Piece";
     }
 }
 
@@ -82,7 +75,7 @@ int main() {
 
     // --- START MENU ---
     int menu_highlight = 0;
-    const char *choices[] = {"Start New Game", "Load Game", "Quit"};
+    const char *choices[] = {"Start Normal Game", "Start Tiny Game", "Start Quick Game", "Load Game", "Quit"};
     int n_choices = sizeof(choices) / sizeof(char *);
 
     while (!game_started) {
@@ -104,11 +97,16 @@ int main() {
             case KEY_UP:    menu_highlight = (menu_highlight == 0) ? n_choices - 1 : menu_highlight - 1; break;
             case KEY_DOWN:  menu_highlight = (menu_highlight + 1) % n_choices; break;
             case '\n': case '\r': case KEY_ENTER:
-                if (menu_highlight == 0) { // New Game
-                    setup_random_army(board, Player::Blue, 0);
-                    setup_random_army(board, Player::Red, 6);
+                if (menu_highlight == 0) { // New Normal Game
+                    board.initialize_game(GameType::Normal);
                     game_started = true;
-                } else if (menu_highlight == 1) { // Load Game
+                } else if (menu_highlight == 1) { // New Tiny Game
+                    board.initialize_game(GameType::Tiny);
+                    game_started = true;
+                } else if (menu_highlight == 2) { // New Quick Game
+                    board.initialize_game(GameType::Quick);
+                    game_started = true;
+                } else if (menu_highlight == 3) { // Load Game
                     char filename_c[256] = {0};
                     timeout(-1); // Disable timeout to allow blocking input
                     curs_set(1); // Show cursor for typing
@@ -125,7 +123,7 @@ int main() {
                         mvprintw(13, 10, "Error: Could not load file. Press any key.");
                         timeout(-1); getch(); timeout(100); // Wait for keypress before continuing
                     }
-                } else if (menu_highlight == 2) { endwin(); return 0; } // Quit
+                } else if (menu_highlight == 4) { endwin(); return 0; } // Quit
                 break;
         }
     }
@@ -133,7 +131,7 @@ int main() {
     std::random_device rd;
     std::mt19937 gen(rd());
 
-    int cursor_x = 0, cursor_y = 6;
+    int cursor_x = 0, cursor_y = board.get_height() > 4 ? 6 : board.get_height() - 1;
     int selected_x = -1, selected_y = -1;
     bool exit_game = false;
     bool game_over = false;
@@ -160,10 +158,16 @@ int main() {
         }
         
         // Render the ASCII Grid
-        mvprintw(1, 3, "┌──────────────────────────────┐");
-        for (int y = 0; y < 10; ++y) {
+        int w = board.get_width();
+        int h = board.get_height();
+
+        mvprintw(1, 3, "┌");
+        for (int x = 0; x < w; ++x) printw("───");
+        printw("┐");
+
+        for (int y = 0; y < h; ++y) {
             mvprintw(2 + y, 0, " %d │", y);
-            for (int x = 0; x < 10; ++x) {
+            for (int x = 0; x < w; ++x) {
                 Piece p = board.get_piece(x, y);
                 bool is_cursor = (x == cursor_x && y == cursor_y) && !game_over;
                 bool is_selected = (x == selected_x && y == selected_y);
@@ -203,8 +207,15 @@ int main() {
             }
             printw("│");
         }
-        mvprintw(12, 3, "└──────────────────────────────┘");
-        mvprintw(13, 4, " 0  1  2  3  4  5  6  7  8  9");
+        mvprintw(2 + h, 3, "└");
+        for (int x = 0; x < w; ++x) printw("───");
+        printw("┘");
+
+        mvprintw(3 + h, 4, "");
+        for (int x = 0; x < w; ++x) {
+            if (x == 0) printw(" %d", x);
+            else printw("  %d", x);
+        }
 
         // Print dynamic messages below the board
         attron(COLOR_PAIR(7));
@@ -284,17 +295,17 @@ int main() {
                 last_ch = -1; // Prevent 'S' from staying highlighted
                 continue;     // Redraw screen with the new status message
             }
-            else if ((last_ch == KEY_UP || last_ch == 'k') && cursor_y > 0) cursor_y--;
-            else if ((last_ch == KEY_DOWN || last_ch == 'j') && cursor_y < 9) cursor_y++;
-            else if ((last_ch == KEY_LEFT || last_ch == 'h') && cursor_x > 0) cursor_x--;
-            else if ((last_ch == KEY_RIGHT || last_ch == 'l') && cursor_x < 9) cursor_x++;
+        else if ((last_ch == KEY_UP || last_ch == 'k') && cursor_y > 0) cursor_y--;
+        else if ((last_ch == KEY_DOWN || last_ch == 'j') && cursor_y < h - 1) cursor_y++;
+        else if ((last_ch == KEY_LEFT || last_ch == 'h') && cursor_x > 0) cursor_x--;
+        else if ((last_ch == KEY_RIGHT || last_ch == 'l') && cursor_x < w - 1) cursor_x++;
             else if (last_ch == '\n' || last_ch == '\r' || last_ch == ' ' || last_ch == KEY_ENTER) {
                 if (selected_x == -1) {
                     Piece p = board.get_piece(cursor_x, cursor_y);
                     if (p.owner == Player::Red && p.is_mobile()) {
                         selected_x = cursor_x;
                         selected_y = cursor_y;
-                        status_msg = "Piece selected. Move to destination and press ENTER.";
+                        status_msg = std::string(piece_name(p.type)) + " selected. Move to destination and press ENTER.";
                     } else {
                         status_msg = "Invalid piece! Select your own mobile piece.";
                     }

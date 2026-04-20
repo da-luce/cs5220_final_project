@@ -13,6 +13,12 @@ enum class Player {
     None
 };
 
+enum class GameType {
+    Normal,
+    Tiny,
+    Quick
+};
+
 // Using numbering where 10 is highest & strongest piece
 enum class PieceType {
     Empty = 0,
@@ -83,6 +89,9 @@ public:
     // Resets board with standard water placement
     void initialize_empty(); 
 
+    // Initializes board layout and randomized piece placement for a specific game type
+    void initialize_game(GameType type);
+
     // Set pieces during setup phase
     bool place_piece(int x, int y, PieceType type, Player owner);
 
@@ -93,6 +102,8 @@ public:
     CombatResult execute_move(const Move& move);
 
     // Frontend getters
+    [[nodiscard]] int get_width() const { return width; }
+    [[nodiscard]] int get_height() const { return height; }
     [[nodiscard]] Piece get_piece(int x, int y) const;
     [[nodiscard]] Player get_current_turn() const { return current_turn; }
     [[nodiscard]] std::vector<Move> get_all_legal_moves(Player player) const;

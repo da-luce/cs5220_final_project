@@ -2,6 +2,7 @@
 #include <cmath>
 #include <algorithm>
 #include <fstream>
+#include <random>
 
 namespace stratego {
 
@@ -23,6 +24,90 @@ void Board::initialize_empty() {
                 grid[index(x, y)] = Piece{PieceType::Water, Player::None, true};
             }
         }
+    } else if (width == 8 && height == 8) {
+        for (int y = 3; y <= 4; ++y) {
+            grid[index(2, y)] = Piece{PieceType::Water, Player::None, true};
+            grid[index(5, y)] = Piece{PieceType::Water, Player::None, true};
+        }
+    }
+}
+
+void Board::initialize_game(GameType type) {
+    if (type == GameType::Normal) {
+        width = 10;
+        height = 10;
+        initialize_empty();
+
+        auto setup_army = [&](Player player, int start_y) {
+            std::vector<PieceType> deck = {
+                PieceType::Flag, PieceType::Marshal, PieceType::General, PieceType::Spy
+            };
+            deck.insert(deck.end(), 6, PieceType::Bomb);
+            deck.insert(deck.end(), 8, PieceType::Scout);
+            deck.insert(deck.end(), 5, PieceType::Miner);
+            deck.insert(deck.end(), 4, PieceType::Sergeant);
+            deck.insert(deck.end(), 4, PieceType::Lieutenant);
+            deck.insert(deck.end(), 4, PieceType::Captain);
+            deck.insert(deck.end(), 3, PieceType::Major);
+            deck.insert(deck.end(), 2, PieceType::Colonel);
+
+            std::random_device rd;
+            std::mt19937 g(rd());
+            std::shuffle(deck.begin(), deck.end(), g);
+
+            int idx = 0;
+            for (int y = start_y; y < start_y + 4; ++y) {
+                for (int x = 0; x < 10; ++x) {
+                    place_piece(x, y, deck[idx++], player);
+                }
+            }
+        };
+        
+        setup_army(Player::Blue, 0);
+        setup_army(Player::Red, 6);
+    } else if (type == GameType::Tiny) {
+        width = 4;
+        height = 4;
+        initialize_empty();
+
+        std::vector<PieceType> deck = {PieceType::Flag, PieceType::Major, PieceType::Captain, PieceType::Lieutenant};
+        std::random_device rd;
+        std::mt19937 g(rd());
+        
+        std::shuffle(deck.begin(), deck.end(), g);
+        for (int x = 0; x < 4; ++x) place_piece(x, 0, deck[x], Player::Blue);
+        
+        std::shuffle(deck.begin(), deck.end(), g);
+        for (int x = 0; x < 4; ++x) place_piece(x, 3, deck[x], Player::Red);
+    } else if (type == GameType::Quick) {
+        width = 8;
+        height = 8;
+        initialize_empty();
+
+        auto setup_quick_army = [&](Player player, int start_y) {
+            std::vector<PieceType> deck = {
+                PieceType::Flag, PieceType::Spy, PieceType::Marshal, PieceType::General,
+                PieceType::Bomb, PieceType::Bomb, PieceType::Miner, PieceType::Miner,
+                PieceType::Scout, PieceType::Scout
+            };
+            // Pad the remaining 6 squares of the 2-row setup area with Empty pieces
+            deck.insert(deck.end(), 6, PieceType::Empty);
+
+            std::random_device rd;
+            std::mt19937 g(rd());
+            std::shuffle(deck.begin(), deck.end(), g);
+
+            int idx = 0;
+            for (int y = start_y; y < start_y + 2; ++y) {
+                for (int x = 0; x < 8; ++x) {
+                    if (deck[idx] != PieceType::Empty) place_piece(x, y, deck[idx], player);
+                    idx++;
+                }
+            }
+        };
+        
+        setup_quick_army(Player::Blue, 0);
+        setup_quick_army(Player::Red, 6);
     }
 }
 
