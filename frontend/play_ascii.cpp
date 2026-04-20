@@ -52,6 +52,13 @@ void handle_human_turn(Board& board, GameState& state) {
     int h = board.get_height();
 
     if (state.last_ch == 'q' || state.last_ch == 'Q') state.exit_game = true;
+    else if (state.last_ch == 'r' || state.last_ch == 'R') {
+        state.game_over = true;
+        state.status_msg = "You resigned. All enemy pieces revealed.";
+        state.selected_x = -1;
+        state.selected_y = -1;
+        state.last_ch = -1;
+    }
     else if (state.last_ch == 'c' || state.last_ch == 'C') {
         state.casual_mode = !state.casual_mode;
         state.status_msg = state.casual_mode ? "Casual mode ON (revealed pieces stay visible)." : "Casual mode OFF (perfect memory disabled).";

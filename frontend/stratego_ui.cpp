@@ -187,7 +187,7 @@ void render_board(const Board& board, const GameState& state) {
     move(19, 4); printw(" "); if (state.last_ch == KEY_LEFT || state.last_ch == 'h') attron(A_REVERSE); printw("←/h"); if (state.last_ch == KEY_LEFT || state.last_ch == 'h') attroff(A_REVERSE); printw("   ");
     if (state.last_ch == KEY_DOWN || state.last_ch == 'j') attron(A_REVERSE); printw("↓/j"); if (state.last_ch == KEY_DOWN || state.last_ch == 'j') attroff(A_REVERSE); printw("   ");
     if (state.last_ch == KEY_RIGHT || state.last_ch == 'l') attron(A_REVERSE); printw("→/l"); if (state.last_ch == KEY_RIGHT || state.last_ch == 'l') attroff(A_REVERSE);
-    mvprintw(18, 25, "[ENTER] Select / Move"); mvprintw(19, 25, "[ESC]   Deselect"); mvprintw(20, 25, "[S]     Save Game"); mvprintw(21, 25, "[C]     Toggle Casual"); mvprintw(22, 25, "[Q]     Quit"); refresh();
+    mvprintw(18, 25, "[ENTER] Select / Move"); mvprintw(19, 25, "[ESC]   Deselect"); mvprintw(20, 25, "[S]     Save Game"); mvprintw(21, 25, "[C]     Toggle Casual"); mvprintw(22, 25, "[R]     Resign"); mvprintw(23, 25, "[Q]     Quit"); refresh();
 }
 
 } // namespace stratego
