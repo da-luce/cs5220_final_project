@@ -78,8 +78,57 @@ int main() {
     }
 
     Board board;
-    setup_random_army(board, Player::Blue, 0);
-    setup_random_army(board, Player::Red, 6);
+    bool game_started = false;
+
+    // --- START MENU ---
+    int menu_highlight = 0;
+    const char *choices[] = {"Start New Game", "Load Game", "Quit"};
+    int n_choices = sizeof(choices) / sizeof(char *);
+
+    while (!game_started) {
+        erase();
+        mvprintw(4, 10, "=== STRATEGO NCURSES ===");
+        for (int i = 0; i < n_choices; ++i) {
+            if (menu_highlight == i) {
+                attron(A_REVERSE);
+                mvprintw(6 + i, 12, "> %s <", choices[i]);
+                attroff(A_REVERSE);
+            } else {
+                mvprintw(6 + i, 14, "%s", choices[i]);
+            }
+        }
+        refresh();
+
+        int ch = getch();
+        switch(ch) {
+            case KEY_UP:    menu_highlight = (menu_highlight == 0) ? n_choices - 1 : menu_highlight - 1; break;
+            case KEY_DOWN:  menu_highlight = (menu_highlight + 1) % n_choices; break;
+            case '\n': case '\r': case KEY_ENTER:
+                if (menu_highlight == 0) { // New Game
+                    setup_random_army(board, Player::Blue, 0);
+                    setup_random_army(board, Player::Red, 6);
+                    game_started = true;
+                } else if (menu_highlight == 1) { // Load Game
+                    char filename_c[256] = {0};
+                    timeout(-1); // Disable timeout to allow blocking input
+                    curs_set(1); // Show cursor for typing
+                    echo(); // Show user input
+                    mvprintw(12, 10, "Enter filename: ");
+                    refresh(); // Ensure prompt is displayed before waiting for input
+                    getstr(filename_c);
+                    curs_set(0); // Hide cursor again
+                    noecho(); // Hide user input again
+                    timeout(100); // Re-enable timeout for main game loop
+                    if (board.load_from_file(filename_c) && std::string(filename_c).length() > 0) {
+                        game_started = true;
+                    } else {
+                        mvprintw(13, 10, "Error: Could not load file. Press any key.");
+                        timeout(-1); getch(); timeout(100); // Wait for keypress before continuing
+                    }
+                } else if (menu_highlight == 2) { endwin(); return 0; } // Quit
+                break;
+        }
+    }
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -192,7 +241,8 @@ int main() {
 
         mvprintw(18, 25, "[ENTER] Select / Move");
         mvprintw(19, 25, "[ESC]   Deselect");
-        mvprintw(20, 25, "[Q]     Quit");
+        mvprintw(20, 25, "[S]     Save Game");
+        mvprintw(21, 25, "[Q]     Quit");
         refresh();
 
         if (game_over) {
@@ -212,6 +262,28 @@ int main() {
             
             last_ch = ch;
             if (last_ch == 'q' || last_ch == 'Q') exit_game = true;
+            else if (last_ch == 's' || last_ch == 'S') {
+                status_msg = "Save game as: ";
+                move(15, 0); clrtoeol();
+                mvprintw(15, 0, "%s", status_msg.c_str());
+
+                char filename_c[256] = {0};
+                timeout(-1); // Disable timeout for blocking input
+                curs_set(1); // Show cursor for typing
+                echo();
+                mvgetstr(15, status_msg.length(), filename_c); // Get string at the prompt location
+                noecho();
+                curs_set(0); // Hide cursor again
+                timeout(100); // Re-enable non-blocking getch
+
+                if (std::string(filename_c).length() > 0 && board.save_to_file(filename_c)) {
+                    status_msg = "Game saved to " + std::string(filename_c) + ".";
+                } else {
+                    status_msg = "Save cancelled or failed.";
+                }
+                last_ch = -1; // Prevent 'S' from staying highlighted
+                continue;     // Redraw screen with the new status message
+            }
             else if ((last_ch == KEY_UP || last_ch == 'k') && cursor_y > 0) cursor_y--;
             else if ((last_ch == KEY_DOWN || last_ch == 'j') && cursor_y < 9) cursor_y++;
             else if ((last_ch == KEY_LEFT || last_ch == 'h') && cursor_x > 0) cursor_x--;

@@ -29,8 +29,8 @@ ctest --output-on-failure
 
 ## Running terminal game
 
-```
-./frontend/play_ascii.cpp
+```shell
+./play
 ```
 
 # TODO: Training on Perlmutter

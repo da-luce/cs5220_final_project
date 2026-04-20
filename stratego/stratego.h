@@ -97,6 +97,10 @@ public:
     [[nodiscard]] Player get_current_turn() const { return current_turn; }
     [[nodiscard]] std::vector<Move> get_all_legal_moves(Player player) const;
     [[nodiscard]] std::vector<Move> get_legal_moves_for_piece(Player player, int x, int y) const;
+
+    // Save/Load game state to a binary file
+    [[nodiscard]] bool save_to_file(const std::string& filename) const;
+    bool load_from_file(const std::string& filename);
 };
 
 } // namespace stratego

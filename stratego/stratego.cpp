@@ -1,6 +1,7 @@
 #include "stratego.h"
 #include <cmath>
 #include <algorithm>
+#include <fstream>
 
 namespace stratego {
 
@@ -201,6 +202,67 @@ std::vector<Move> Board::get_legal_moves_for_piece(Player player, int x, int y) 
     }
 
     return moves;
+}
+
+bool Board::save_to_file(const std::string& filename) const {
+    std::ofstream ofs(filename, std::ios::binary | std::ios::trunc);
+    if (!ofs) {
+        return false;
+    }
+
+    // 1. Write metadata (dimensions, current turn)
+    ofs.write(reinterpret_cast<const char*>(&width), sizeof(width));
+    ofs.write(reinterpret_cast<const char*>(&height), sizeof(height));
+    char turn = static_cast<char>(current_turn);
+    ofs.write(&turn, sizeof(turn));
+
+    // 2. Write grid data piece by piece
+    for (const auto& piece : grid) {
+        char type = static_cast<char>(piece.type);
+        char owner = static_cast<char>(piece.owner);
+        char revealed = piece.revealed ? 1 : 0;
+        ofs.write(&type, sizeof(type));
+        ofs.write(&owner, sizeof(owner));
+        ofs.write(&revealed, sizeof(revealed));
+    }
+
+    return ofs.good();
+}
+
+bool Board::load_from_file(const std::string& filename) {
+    std::ifstream ifs(filename, std::ios::binary);
+    if (!ifs) {
+        return false;
+    }
+
+    // 1. Read metadata
+    int new_width, new_height;
+    ifs.read(reinterpret_cast<char*>(&new_width), sizeof(new_width));
+    ifs.read(reinterpret_cast<char*>(&new_height), sizeof(new_height));
+    char turn;
+    ifs.read(&turn, sizeof(turn));
+
+    if (ifs.fail()) return false;
+
+    // 2. Update board state from metadata
+    width = new_width;
+    height = new_height;
+    current_turn = static_cast<Player>(turn);
+    grid.resize(width * height);
+
+    // 3. Read grid data
+    for (auto& piece : grid) {
+        char type_c, owner_c, revealed_c;
+        ifs.read(&type_c, sizeof(type_c));
+        ifs.read(&owner_c, sizeof(owner_c));
+        ifs.read(&revealed_c, sizeof(revealed_c));
+
+        if (ifs.fail()) return false;
+
+        piece = {static_cast<PieceType>(type_c), static_cast<Player>(owner_c), (revealed_c != 0)};
+    }
+
+    return ifs.peek() == EOF; // Ensure we successfully read the whole file
 }
 
 } // namespace stratego

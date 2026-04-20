@@ -1,6 +1,7 @@
 #include "stratego.h"
 #include <iostream>
 #include <cassert>
+#include <cstdio> // For std::remove
 
 using namespace stratego;
 
@@ -90,6 +91,43 @@ void test_combat_resolutions() {
     assert(res2 == CombatResult::AttackerWins); // Spy kills Marshal
 }
 
+void test_save_load() {
+    const std::string filename = "test_save.bin";
+    
+    Board board1;
+    board1.place_piece(3, 7, PieceType::Marshal, Player::Red);
+    board1.place_piece(3, 6, PieceType::Spy, Player::Red); // Attacker
+    board1.place_piece(3, 5, PieceType::General, Player::Blue); // Defender
+    
+    // Make a move to change turn and reveal a piece.
+    // Red Spy (1) attacks Blue General (9). General wins, Spy is removed.
+    board1.execute_move({3, 6, 3, 5}); 
+    
+    // Save the state after the move
+    assert(board1.save_to_file(filename));
+
+    // Load the state into a new, empty board
+    Board board2;
+    assert(board2.load_from_file(filename));
+
+    // Compare the two boards to ensure they are identical
+    assert(board1.get_current_turn() == board2.get_current_turn());
+    assert(board2.get_current_turn() == Player::Blue); // Red moved, so it's Blue's turn
+    
+    for (int y = 0; y < 10; ++y) {
+        for (int x = 0; x < 10; ++x) {
+            Piece p1 = board1.get_piece(x, y);
+            Piece p2 = board2.get_piece(x, y);
+            assert(p1.type == p2.type);
+            assert(p1.owner == p2.owner);
+            assert(p1.revealed == p2.revealed);
+        }
+    }
+
+    // Clean up the test file
+    std::remove(filename.c_str());
+}
+
 int main() {
     std::cout << "Running Stratego Rules Tests...\n";
     
@@ -98,6 +136,7 @@ int main() {
     test_standard_moves();
     test_scout_moves();
     test_combat_resolutions();
+    test_save_load();
 
     std::cout << "All tests passed successfully!\n";
     return 0;
