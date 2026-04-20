@@ -46,7 +46,7 @@ enum class PieceType {
 struct Piece {
     PieceType type{PieceType::Empty};
     Player owner{Player::None};
-    bool revealed{false}; // Crucial for RL: True if piece survived a combat
+    bool revealed{false}; // True if piece survived a combat
 
     [[nodiscard]] bool is_empty() const { 
         return type == PieceType::Empty; 

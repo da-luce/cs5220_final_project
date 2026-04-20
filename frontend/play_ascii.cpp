@@ -102,6 +102,11 @@ int main() {
     int selected_x = -1, selected_y = -1;
     bool exit_game = false;
     bool game_over = false;
+    bool in_confrontation = false;
+    bool casual_mode = false;
+    Move pending_move;
+    PieceType pending_attacker_type;
+    PieceType pending_defender_type;
     int last_ch = -1;
     std::string status_msg = "Welcome! You are RED. Use Arrows to move, ENTER to select.";
 
@@ -150,23 +155,54 @@ int main() {
                 }
 
                 int color_pair = 0;
+                bool is_confrontation_target = (in_confrontation && x == pending_move.end_x && y == pending_move.end_y);
+                bool is_confrontation_source = (in_confrontation && x == pending_move.start_x && y == pending_move.start_y);
+
                 if (is_selected) color_pair = 6;
                 else if (is_cursor) color_pair = 5;
                 else if (is_valid_attack) color_pair = 9;
                 else if (is_valid_empty) color_pair = 8;
+                else if (is_confrontation_source) color_pair = 0;
+                else if (is_confrontation_target) color_pair = 0;
                 else if (p.is_obstacle()) color_pair = 4;
                 else if (!p.is_empty()) {
                     if (p.owner == Player::Red) color_pair = 1;
-                    else color_pair = p.revealed ? 2 : 3;
+                    else color_pair = (casual_mode && p.revealed) ? 2 : 3;
+                    if (game_over && p.owner == Player::Blue) color_pair = 2;
                 }
 
                 if (color_pair) attron(COLOR_PAIR(color_pair));
 
-                if (p.is_obstacle()) printw("≈≈ ");
+                if (is_confrontation_source) {
+                    printw("·  ");
+                } else if (is_confrontation_target) {
+                    std::string a_str = piece_to_str(pending_attacker_type);
+                    if (!a_str.empty() && a_str.back() == ' ') a_str.pop_back();
+                    std::string d_str = piece_to_str(pending_defender_type);
+                    if (!d_str.empty() && d_str.back() == ' ') d_str.pop_back();
+
+                    Player current_player = board.get_current_turn();
+                    int attacker_color = (current_player == Player::Red) ? 1 : 2;
+                    int defender_color = (current_player == Player::Red) ? 2 : 1;
+
+                    if (color_pair) attroff(COLOR_PAIR(color_pair));
+                    
+                    attron(COLOR_PAIR(attacker_color));
+                    printw("%s", a_str.c_str());
+                    attroff(COLOR_PAIR(attacker_color));
+                    
+                    attron(COLOR_PAIR(defender_color));
+                    printw("%s", d_str.c_str());
+                    attroff(COLOR_PAIR(defender_color));
+                    
+                    if (color_pair) attron(COLOR_PAIR(color_pair));
+                    printw(" ");
+                }
+                else if (p.is_obstacle()) printw("≈≈ ");
                 else if (p.is_empty()) printw("·  ");
                 else if (p.owner == Player::Red) printw("%s ", piece_to_str(p.type));
                 else {
-                    if (p.revealed || game_over) printw("%s ", piece_to_str(p.type));
+                    if (game_over || (casual_mode && p.revealed)) printw("%s ", piece_to_str(p.type));
                     else printw("?  ");
                 }
 
@@ -220,7 +256,8 @@ int main() {
         mvprintw(18, 25, "[ENTER] Select / Move");
         mvprintw(19, 25, "[ESC]   Deselect");
         mvprintw(20, 25, "[S]     Save Game");
-        mvprintw(21, 25, "[Q]     Quit");
+        mvprintw(21, 25, "[C]     Toggle Casual");
+        mvprintw(22, 25, "[Q]     Quit");
         refresh();
 
         if (game_over) {
@@ -228,6 +265,25 @@ int main() {
             int ch = getch();
             if (ch == 'q' || ch == 'Q') {
                 break;
+            }
+            continue;
+        }
+
+        if (in_confrontation) {
+            int ch = getch();
+            if (ch == ERR) {
+                last_ch = -1;
+                continue;
+            }
+            last_ch = ch;
+            if (ch == 'q' || ch == 'Q') {
+                exit_game = true;
+            } else if (ch == '\n' || ch == '\r' || ch == ' ' || ch == KEY_ENTER) {
+                in_confrontation = false;
+                CombatResult res = board.execute_move(pending_move);
+                status_msg = "Attack resolved.";
+                append_combat_msg(res, status_msg);
+                last_ch = -1;
             }
             continue;
         }
@@ -243,6 +299,12 @@ int main() {
             
             last_ch = ch;
             if (last_ch == 'q' || last_ch == 'Q') exit_game = true;
+            else if (last_ch == 'c' || last_ch == 'C') {
+                casual_mode = !casual_mode;
+                status_msg = casual_mode ? "Casual mode ON (revealed pieces stay visible)." : "Casual mode OFF (perfect memory disabled).";
+                last_ch = -1;
+                continue;
+            }
             else if (last_ch == 's' || last_ch == 'S') {
                 status_msg = "Save game as: ";
                 move(15, 0); clrtoeol();
@@ -286,10 +348,20 @@ int main() {
                     } else {
                         Move m{selected_x, selected_y, cursor_x, cursor_y};
                         if (board.is_legal_move(m)) {
-                            res = board.execute_move(m);
-                            selected_x = -1; selected_y = -1;
-                            status_msg = "You moved.";
-                            append_combat_msg(res, status_msg);
+                            Piece target = board.get_piece(cursor_x, cursor_y);
+                            if (!target.is_empty()) {
+                                in_confrontation = true;
+                                pending_move = m;
+                                pending_attacker_type = board.get_piece(selected_x, selected_y).type;
+                                pending_defender_type = target.type;
+                                status_msg = "Confrontation! Press ENTER to resolve.";
+                                selected_x = -1; selected_y = -1;
+                            } else {
+                                res = board.execute_move(m);
+                                selected_x = -1; selected_y = -1;
+                                status_msg = "You moved.";
+                                append_combat_msg(res, status_msg);
+                            }
                         } else {
                             status_msg = "Illegal move! Try again or press ESC to deselect.";
                         }
@@ -315,10 +387,19 @@ int main() {
             } else {
                 std::uniform_int_distribution<> dist(0, legal_moves.size() - 1);
                 Move m = legal_moves[dist(gen)];
-                res = board.execute_move(m);
                 
-                status_msg = "AI moved (" + std::to_string(m.start_x) + "," + std::to_string(m.start_y) + ") -> (" + std::to_string(m.end_x) + "," + std::to_string(m.end_y) + ").";
-                append_combat_msg(res, status_msg);
+                Piece target = board.get_piece(m.end_x, m.end_y);
+                if (!target.is_empty()) {
+                    in_confrontation = true;
+                    pending_move = m;
+                    pending_attacker_type = board.get_piece(m.start_x, m.start_y).type;
+                    pending_defender_type = target.type;
+                    status_msg = "AI Attacks! Press ENTER to resolve.";
+                } else {
+                    res = board.execute_move(m);
+                    status_msg = "AI moved (" + std::to_string(m.start_x) + "," + std::to_string(m.start_y) + ") -> (" + std::to_string(m.end_x) + "," + std::to_string(m.end_y) + ").";
+                    append_combat_msg(res, status_msg);
+                }
             }
         }
     }
