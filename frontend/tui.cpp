@@ -30,166 +30,112 @@ void init_ncurses() {
     }
 }
 
-bool show_start_menu(stratego::Board& board) {
-    int stage = 0;
-    
-    int game_type_idx = 0;
-    std::vector<std::string> game_types = {"Classic (10x10)", "Quick (8x8)", "Tiny (4x4)", "Load Game"};
-    
-    int layout_idx = 0;
-    std::vector<std::string> layouts;
-    
-    int ai_idx = 0;
-    std::vector<std::string> ais = {"Random AI"};
-    
-    stratego::GameType selected_game_type;
-    stratego::SetupType selected_setup_type = stratego::SetupType::Default;
-
+int prompt_list(const std::string& title, 
+                const std::vector<std::pair<std::string, std::string>>& history, 
+                const std::string& question, 
+                const std::vector<std::string>& choices) {
+    int highlight = 0;
     while (true) {
         erase();
-        mvprintw(2, 4, "=== STRATEGO SETUP ===");
+        int row = 2;
+        if (!title.empty()) {
+            mvprintw(row++, 4, "%s", title.c_str());
+            row++;
+        }
 
-        if (stage == 0) {
-            attron(COLOR_PAIR(11) | A_BOLD);
-            mvprintw(4, 4, "?");
-            attroff(COLOR_PAIR(11) | A_BOLD);
-            attron(A_BOLD);
-            printw(" Select Game Type:");
-            attroff(A_BOLD);
-
-            for (size_t i = 0; i < game_types.size(); ++i) {
-                if ((int)i == game_type_idx) {
-                    attron(COLOR_PAIR(11));
-                    mvprintw(6 + i, 4, "> ");
-                    attroff(COLOR_PAIR(11));
-                    attron(A_REVERSE);
-                    printw("%s", game_types[i].c_str());
-                    attroff(A_REVERSE);
-                } else {
-                    mvprintw(6 + i, 6, "%s", game_types[i].c_str());
-                }
-            }
-            refresh();
-            int ch = getch();
-            if (ch == KEY_UP || ch == 'k') game_type_idx = (game_type_idx == 0) ? game_types.size() - 1 : game_type_idx - 1;
-            else if (ch == KEY_DOWN || ch == 'j') game_type_idx = (game_type_idx + 1) % game_types.size();
-            else if (ch == '\n' || ch == '\r' || ch == KEY_ENTER) {
-                if (game_type_idx == 3) {
-                    char filename_c[256] = {0};
-                    timeout(-1); curs_set(1); echo();
-                    mvprintw(8 + game_types.size(), 4, "Enter filename: ");
-                    refresh();
-                    getstr(filename_c);
-                    curs_set(0); noecho(); timeout(100);
-                    if (board.load_from_file(filename_c) && std::string(filename_c).length() > 0) {
-                        return true;
-                    } else {
-                        mvprintw(9 + game_types.size(), 4, "Error: Could not load file. Press any key.");
-                        timeout(-1); getch(); timeout(100);
-                    }
-                } else {
-                    if (game_type_idx == 0) {
-                        selected_game_type = stratego::GameType::Classic;
-                        layouts = {"Probabilistic (Dobby/Oewesok)", "Random"};
-                    } else if (game_type_idx == 1) {
-                        selected_game_type = stratego::GameType::Quick;
-                        layouts = {"Random"};
-                    } else {
-                        selected_game_type = stratego::GameType::Tiny;
-                        layouts = {"Random"};
-                    }
-                    layout_idx = 0;
-                    stage = 1;
-                }
-            } else if (ch == 'q' || ch == 'Q') {
-                return false;
-            }
-        } else if (stage == 1) {
+        for (const auto& past : history) {
             attron(COLOR_PAIR(10) | A_BOLD);
-            mvprintw(4, 4, "v");
+            mvprintw(row, 4, "v");
             attroff(COLOR_PAIR(10) | A_BOLD);
-            printw(" Game Type: %s", game_types[game_type_idx].c_str());
+            printw(" %s %s", past.first.c_str(), past.second.c_str());
+            row++;
+        }
+        if (!history.empty()) row++;
 
-            attron(COLOR_PAIR(11) | A_BOLD);
-            mvprintw(6, 4, "?");
-            attroff(COLOR_PAIR(11) | A_BOLD);
-            attron(A_BOLD);
-            printw(" Select Starting Layout:");
-            attroff(A_BOLD);
+        attron(COLOR_PAIR(11) | A_BOLD);
+        mvprintw(row, 4, "?");
+        attroff(COLOR_PAIR(11) | A_BOLD);
+        attron(A_BOLD);
+        printw(" %s", question.c_str());
+        attroff(A_BOLD);
+        row += 2;
 
-            for (size_t i = 0; i < layouts.size(); ++i) {
-                if ((int)i == layout_idx) {
-                    attron(COLOR_PAIR(11));
-                    mvprintw(8 + i, 4, "> ");
-                    attroff(COLOR_PAIR(11));
-                    attron(A_REVERSE);
-                    printw("%s", layouts[i].c_str());
-                    attroff(A_REVERSE);
-                } else {
-                    mvprintw(8 + i, 6, "%s", layouts[i].c_str());
-                }
-            }
-            refresh();
-            int ch = getch();
-            if (ch == KEY_UP || ch == 'k') layout_idx = (layout_idx == 0) ? layouts.size() - 1 : layout_idx - 1;
-            else if (ch == KEY_DOWN || ch == 'j') layout_idx = (layout_idx + 1) % layouts.size();
-            else if (ch == '\n' || ch == '\r' || ch == KEY_ENTER) {
-                if (selected_game_type == stratego::GameType::Classic && layout_idx == 0) {
-                    selected_setup_type = stratego::SetupType::Probabilistic;
-                } else {
-                    selected_setup_type = stratego::SetupType::Random;
-                }
-                stage = 2;
-            } else if (ch == 27 || ch == KEY_BACKSPACE || ch == 127 || ch == 8 || ch == 'b' || ch == 'B') {
-                stage = 0;
-            } else if (ch == 'q' || ch == 'Q') {
-                return false;
-            }
-        } else if (stage == 2) {
-            attron(COLOR_PAIR(10) | A_BOLD);
-            mvprintw(4, 4, "v");
-            attroff(COLOR_PAIR(10) | A_BOLD);
-            printw(" Game Type: %s", game_types[game_type_idx].c_str());
-
-            attron(COLOR_PAIR(10) | A_BOLD);
-            mvprintw(5, 4, "v");
-            attroff(COLOR_PAIR(10) | A_BOLD);
-            printw(" Starting Layout: %s", layouts[layout_idx].c_str());
-
-            attron(COLOR_PAIR(11) | A_BOLD);
-            mvprintw(7, 4, "?");
-            attroff(COLOR_PAIR(11) | A_BOLD);
-            attron(A_BOLD);
-            printw(" Select AI Opponent:");
-            attroff(A_BOLD);
-
-            for (size_t i = 0; i < ais.size(); ++i) {
-                if ((int)i == ai_idx) {
-                    attron(COLOR_PAIR(11));
-                    mvprintw(9 + i, 4, "> ");
-                    attroff(COLOR_PAIR(11));
-                    attron(A_REVERSE);
-                    printw("%s", ais[i].c_str());
-                    attroff(A_REVERSE);
-                } else {
-                    mvprintw(9 + i, 6, "%s", ais[i].c_str());
-                }
-            }
-            refresh();
-            int ch = getch();
-            if (ch == KEY_UP || ch == 'k') ai_idx = (ai_idx == 0) ? ais.size() - 1 : ai_idx - 1;
-            else if (ch == KEY_DOWN || ch == 'j') ai_idx = (ai_idx + 1) % ais.size();
-            else if (ch == '\n' || ch == '\r' || ch == KEY_ENTER) {
-                board.initialize_game(selected_game_type, selected_setup_type);
-                return true;
-            } else if (ch == 27 || ch == KEY_BACKSPACE || ch == 127 || ch == 8 || ch == 'b' || ch == 'B') {
-                stage = 1;
-            } else if (ch == 'q' || ch == 'Q') {
-                return false;
+        for (size_t i = 0; i < choices.size(); ++i) {
+            if ((int)i == highlight) {
+                attron(COLOR_PAIR(11));
+                mvprintw(row + i, 4, "> ");
+                attroff(COLOR_PAIR(11));
+                attron(A_REVERSE);
+                printw("%s", choices[i].c_str());
+                attroff(A_REVERSE);
+            } else {
+                mvprintw(row + i, 6, "%s", choices[i].c_str());
             }
         }
+        refresh();
+
+        int ch = getch();
+        if (ch == KEY_UP || ch == 'k') highlight = (highlight == 0) ? choices.size() - 1 : highlight - 1;
+        else if (ch == KEY_DOWN || ch == 'j') highlight = (highlight + 1) % choices.size();
+        else if (ch == '\n' || ch == '\r' || ch == KEY_ENTER) return highlight;
+        else if (ch == 27 || ch == KEY_BACKSPACE || ch == 127 || ch == 8 || ch == 'b' || ch == 'B') return -1;
+        else if (ch == 'q' || ch == 'Q') return -2;
     }
-    return true;
+}
+
+int prompt_input(const std::string& title,
+                 const std::vector<std::pair<std::string, std::string>>& history,
+                 const std::string& question,
+                 std::string& out_str) {
+    erase();
+    int row = 2;
+    if (!title.empty()) {
+        mvprintw(row++, 4, "%s", title.c_str());
+        row++;
+    }
+
+    for (const auto& past : history) {
+        attron(COLOR_PAIR(10) | A_BOLD);
+        mvprintw(row, 4, "v");
+        attroff(COLOR_PAIR(10) | A_BOLD);
+        printw(" %s %s", past.first.c_str(), past.second.c_str());
+        row++;
+    }
+    if (!history.empty()) row++;
+
+    attron(COLOR_PAIR(11) | A_BOLD);
+    mvprintw(row, 4, "?");
+    attroff(COLOR_PAIR(11) | A_BOLD);
+    attron(A_BOLD);
+    printw(" %s ", question.c_str());
+    attroff(A_BOLD);
+
+    refresh();
+
+    char buffer[256] = {0};
+    timeout(-1); 
+    curs_set(1); 
+    echo();
+    
+    getstr(buffer);
+    
+    curs_set(0); 
+    noecho(); 
+    timeout(100);
+
+    out_str = buffer;
+    if (out_str.empty()) return -1;
+    return 1;
+}
+
+void show_error(const std::string& msg) {
+    erase();
+    attron(COLOR_PAIR(1) | A_BOLD);
+    mvprintw(10, 4, "%s", msg.c_str());
+    attroff(COLOR_PAIR(1) | A_BOLD);
+    mvprintw(12, 4, "Press any key to try again.");
+    refresh();
+    timeout(-1); getch(); timeout(100);
 }
 
 } // namespace tui

@@ -5,6 +5,7 @@
 #include <vector>
 #include <random>
 #include <algorithm>
+#include <utility>
 #include <string>
 #include "tui.h"
 
@@ -48,12 +49,48 @@ const char* piece_name(PieceType type) {
     }
 }
 
+bool show_start_menu(Board& board) {
+    tui::Form form("=== STRATEGO SETUP ===");
+
+    while (form.running()) {
+        std::string game_type = form.select("Select Game Type:", {"Classic (10x10)", "Quick (8x8)", "Tiny (4x4)", "Load Game"});
+        if (game_type == "") continue;
+
+        if (game_type == "Load Game") {
+            std::string filename = form.text_input("Enter filename:");
+            if (filename == "") continue;
+            
+            if (board.load_from_file(filename)) {
+                return true;
+            } else {
+                form.set_error("Error: Could not load file.");
+            }
+        } else {
+            std::vector<std::string> layouts = {"Random"};
+            if (game_type == "Classic (10x10)") layouts = {"Probabilistic (Dobby/Oewesok)", "Random"};
+            
+            std::string layout = form.select("Select Starting Layout:", layouts);
+            if (layout == "") continue;
+
+            std::string ai = form.select("Select AI Opponent:", {"Random AI"});
+            if (ai == "") continue;
+
+            GameType selected_game_type = (game_type == "Classic (10x10)") ? GameType::Classic : ((game_type == "Quick (8x8)") ? GameType::Quick : GameType::Tiny);
+            SetupType selected_setup_type = (layout == "Probabilistic (Dobby/Oewesok)") ? SetupType::Probabilistic : SetupType::Random;
+            
+            board.initialize_game(selected_game_type, selected_setup_type);
+            return true;
+        }
+    }
+    return false;
+}
+
 int main() {
     setlocale(LC_ALL, ""); // Ensure terminal supports full Unicode characters
     tui::init_ncurses();
 
     Board board;
-    if (!tui::show_start_menu(board)) {
+    if (!show_start_menu(board)) {
         endwin();
         return 0;
     }
