@@ -40,7 +40,7 @@ void Board::initialize_empty() {
 }
 
 void Board::initialize_game(GameType type) {
-    if (type == GameType::Normal) {
+    if (type == GameType::Classic) {
         width = 10;
         height = 10;
         initialize_empty();

@@ -30,7 +30,7 @@ void init_ncurses() {
 bool show_start_menu(stratego::Board& board) {
     bool game_started = false;
     int menu_highlight = 0;
-    const char *choices[] = {"Start Normal Game", "Start Tiny Game", "Start Quick Game", "Load Game", "Quit"};
+    const char *choices[] = {"Start Classic Game", "Start Tiny Game", "Start Quick Game", "Load Game", "Quit"};
     int n_choices = sizeof(choices) / sizeof(char *);
 
     while (!game_started) {
@@ -52,8 +52,8 @@ bool show_start_menu(stratego::Board& board) {
             case KEY_UP:    menu_highlight = (menu_highlight == 0) ? n_choices - 1 : menu_highlight - 1; break;
             case KEY_DOWN:  menu_highlight = (menu_highlight + 1) % n_choices; break;
             case '\n': case '\r': case KEY_ENTER:
-                if (menu_highlight == 0) { // New Normal Game
-                    board.initialize_game(stratego::GameType::Normal);
+                if (menu_highlight == 0) { // New Classic Game
+                    board.initialize_game(stratego::GameType::Classic);
                     game_started = true;
                 } else if (menu_highlight == 1) { // New Tiny Game
                     board.initialize_game(stratego::GameType::Tiny);

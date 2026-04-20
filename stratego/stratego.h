@@ -14,7 +14,7 @@ enum class Player {
 };
 
 enum class GameType {
-    Normal,
+    Classic,
     Tiny,
     Quick
 };
@@ -83,6 +83,10 @@ private:
     int max_moves;
     int move_count;
     std::vector<Move> move_history;
+
+    // Stores board states after moves that revealed nothing, for detecting loops
+    // Used to implement the More-Squares Rule
+    // https://web.archive.org/web/20110123114925/http://www.strategousa.org/wiki/index.php/2010_Computer_Stratego_World_Championship
     std::vector<std::string> red_chase_hashes;
     std::vector<std::string> blue_chase_hashes;
 
