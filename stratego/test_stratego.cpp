@@ -39,6 +39,12 @@ void test_standard_moves() {
     
     // Standard pieces cannot move diagonally
     assert(!board.is_legal_move({1, 1, 2, 2}));
+
+    // Standard pieces cannot move to the same square
+    assert(!board.is_legal_move({1, 1, 1, 1}));
+
+    // Moving an empty square is illegal
+    assert(!board.is_legal_move({0, 0, 0, 1}));
 }
 
 void test_scout_moves() {
@@ -95,13 +101,13 @@ void test_save_load() {
     const std::string filename = "test_save.bin";
     
     Board board1;
-    board1.place_piece(3, 7, PieceType::Marshal, Player::Red);
-    board1.place_piece(3, 6, PieceType::Spy, Player::Red); // Attacker
-    board1.place_piece(3, 5, PieceType::General, Player::Blue); // Defender
+    board1.place_piece(0, 7, PieceType::Marshal, Player::Red);
+    board1.place_piece(0, 6, PieceType::Spy, Player::Red); // Attacker
+    board1.place_piece(0, 5, PieceType::General, Player::Blue); // Defender
     
     // Make a move to change turn and reveal a piece.
     // Red Spy (1) attacks Blue General (9). General wins, Spy is removed.
-    board1.execute_move({3, 6, 3, 5}); 
+    board1.execute_move({0, 6, 0, 5}); 
     
     // Save the state after the move
     assert(board1.save_to_file(filename));
@@ -128,7 +134,22 @@ void test_save_load() {
     std::remove(filename.c_str());
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+    if (argc > 1) {
+        std::string test_name = argv[1];
+        if (test_name == "out_of_bounds") test_out_of_bounds();
+        else if (test_name == "immobile_pieces") test_immobile_pieces();
+        else if (test_name == "standard_moves") test_standard_moves();
+        else if (test_name == "scout_moves") test_scout_moves();
+        else if (test_name == "combat_resolutions") test_combat_resolutions();
+        else if (test_name == "save_load") test_save_load();
+        else {
+            std::cerr << "Unknown test: " << test_name << "\n";
+            return 1;
+        }
+        return 0;
+    }
+
     std::cout << "Running Stratego Rules Tests...\n";
     
     test_out_of_bounds();

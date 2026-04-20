@@ -32,7 +32,7 @@ make
 ### Tests
 
 ```shell
-ctest --output-on-failure
+make test --output-on-failure
 ```
 
 ## Running terminal game
