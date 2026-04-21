@@ -30,13 +30,14 @@ cd build
 cmake ..
 make
 ```
-### Tests
+
+### Run Tests
 
 ```shell
-make test --output-on-failure
+./stratego/test_stratego
 ```
 
-## Running terminal game
+## Run Terminal Game
 
 ```shell
 ./play
