@@ -42,6 +42,12 @@ make test --output-on-failure
 ./play
 ```
 
+## Training
+
+```shell
+./stratego/train --iters 50000 --out custom_best_model.pth
+```
+
 # TODO: Training on Perlmutter
 
 ## Architecture & Tech Stack
@@ -92,3 +98,49 @@ final_project/
 └── experiments/              # SCRIPTS & PROTOTYPES
     └── play.py               # Tkinter Python UI
 ```
+
+## Random Notes and Observations
+
+- Stratego logic is very conditional (e.g., if–then–else rules, piece rank comparisons), making it very hard to model or run quickly on a GPU
+- Encoding board state is important
+
+## Board Encoding
+
+We have found that devising a smart encoding of the board state is critical to obtain good AI performance. Our scheme follows the standard approach used in modern deep reinforcement learning systems for board games, where the state is encoded as a stack of spatial feature planes separating piece types, player ownership, and hidden information. More specifically, our board state is represented as a `C x H x W` tensor, where `C` is the number of channels (see below), and `H x W` are the height and width of the game board, respectively. Each channel contains different information:
+
+- For each piece ranking (Scout, Miner, etc.), encode a one hot channel for all piece locations.
+-For each piece ranking (Flag, Lieutenant, Captain, Major), encode a one-hot channel for the current player's pieces
+- Also, for each piece ranking, encode a one-hot channel for the opponent's pieces that have been revealed during combat
+- Encode one channel for all opponent pieces whose identities are not yet revealed
+- Encode one channel containing the lake (impassable tiles)
+
+## Action Encoding
+
+We use a flattened discrete action space where each possible move is represented as a single integer. This avoids structured outputs like `(x, y, dx, dy)` and allows the policy network to output a single categorical distribution over all actions. This is also standard in modern RL.
+
+Each action encodes:
+
+- a start position `(x, y)`
+- a direction in the set  `{Up, Down, Left, Right}`
+- a movement distance in the range `[1, max_dist]`, where `max_dist = max(H, W) - 1`
+
+We flatten this into a single index:
+
+$$
+\text{action} = ((y \cdot W + x) \cdot 4 \cdot D) + (\text{direction} \cdot D) + (\text{distance} - 1)
+$$
+
+where
+
+- $W$ = board width
+- $H$ = board height
+- $D$ = max distance
+- $\text{dir} \in \{0,1,2,3\}$
+
+This gives a total action space size:
+
+$$
+|A| = H \cdot W \cdot 4 \cdot D
+$$
+
+This gives us a fixed-size action space directly compatible with softmax policy heads. This mapping is fully reversible so we can decode the action index back into an actual move on the game board. Illegal actions are handled via masking or penalization during environment stepping.

@@ -43,7 +43,7 @@ const char* piece_name(PieceType type) {
     }
 }
 
-bool show_start_menu(Board& board) {
+bool show_start_menu(Board& board, GameState& state) {
     tui::Form form("=== STRATEGO SETUP ===");
 
     while (form.running()) {
@@ -66,8 +66,17 @@ bool show_start_menu(Board& board) {
             std::string layout = form.select("Select Starting Layout:", layouts);
             if (layout == "") continue;
 
-            std::string ai = form.select("Select AI Opponent:", {"Random AI"});
+                std::vector<std::string> ai_options = {"Random AI"};
+                if (game_type == "Tiny (4x4)") ai_options.push_back("Trained AI");
+
+                std::string ai = form.select("Select AI Opponent:", ai_options);
             if (ai == "") continue;
+                state.ai_type = ai;
+
+                if (ai == "Trained AI") {
+                    state.model_path = form.text_input("Enter model path (.pth):");
+                    if (state.model_path == "") continue;
+                }
 
             GameType selected_game_type = (game_type == "Classic (10x10)") ? GameType::Classic : 
                                           (game_type == "Barrage (10x10)") ? GameType::Barrage :

@@ -18,13 +18,15 @@ struct GameState {
     PieceType pending_defender_type{PieceType::Empty};
     int last_ch = -1;
     std::string status_msg = "Welcome! You are RED. Use Arrows to move, ENTER to select.";
+    std::string ai_type = "Random AI";
+    std::string model_path = "";
 };
 
 // String/UI helpers
 const char* piece_to_str(PieceType type);
 const char* piece_name(PieceType type);
 
-bool show_start_menu(Board& board);
+bool show_start_menu(Board& board, GameState& state);
 void render_board(const Board& board, const GameState& state);
 
 } // namespace stratego

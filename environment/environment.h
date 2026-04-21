@@ -1,3 +1,4 @@
+#pragma once
 #include <vector>
 
 // Notice that "observation" and "state" are used to represent the same idea,

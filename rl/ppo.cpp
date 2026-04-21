@@ -22,7 +22,7 @@ void train_ppo(
             bool is_terminal = next.terminated || next.truncated;
 
             // Store transition
-            buffer.add(obs, out.action, next.reward, out.value, out.log_prob, is_terminal);
+            buffer.add(obs, out.action, next.reward, out.value, out.log_prob, is_terminal, out.mask);
 
             if (next.terminated) {
                 obs = env.reset();

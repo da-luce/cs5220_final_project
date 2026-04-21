@@ -1,3 +1,6 @@
+#include "../environment/stratego_tiny.cpp"
+#include "../rl/stratego_tiny_agent.cpp"
+
 #include "stratego.h"
 #include <ncurses.h>
 #include <locale.h>
@@ -131,7 +134,7 @@ void handle_human_turn(Board& board, GameState& state) {
     }
 }
 
-void handle_ai_turn(Board& board, GameState& state, std::mt19937& gen) {
+void handle_ai_turn(Board& board, GameState& state, std::mt19937& gen, StrategoEnvironment* env, StrategoTinyAgent* agent) {
     state.status_msg = "AI is thinking...";
     attron(COLOR_PAIR(7));
     move(15, 0); clrtoeol();
@@ -145,8 +148,15 @@ void handle_ai_turn(Board& board, GameState& state, std::mt19937& gen) {
         state.status_msg = "VICTORY! The AI has no legal moves left.";
         state.game_over = true;
     } else {
-        std::uniform_int_distribution<> dist(0, legal_moves.size() - 1);
-        Move m = legal_moves[dist(gen)];
+        Move m;
+        if (state.ai_type == "Trained AI" && agent != nullptr && env != nullptr) {
+            env->set_board(board); // Sync the environment to the current UI board state
+            auto out = agent->act(env->encode_board(board));
+            m = env->decode_action(out.action);
+        } else {
+            std::uniform_int_distribution<> dist(0, legal_moves.size() - 1);
+            m = legal_moves[dist(gen)];
+        }
         
         Piece target = board.get_piece(m.end_x, m.end_y);
         if (!target.is_empty()) {
@@ -168,15 +178,32 @@ int main() {
     tui::init_ncurses();
 
     Board board;
-    if (!show_start_menu(board)) {
+    GameState state;
+
+    if (!show_start_menu(board, state)) {
         endwin();
         return 0;
+    }
+
+    StrategoEnvironment env;
+    StrategoTinyAgent* agent = nullptr;
+
+    if (state.ai_type == "Trained AI") {
+        agent = new StrategoTinyAgent(env);
+        try {
+            agent->load_model(state.model_path);
+            agent->set_eval_mode(true); // Ensures argmax deterministic selection
+        } catch (const std::exception& e) {
+            endwin();
+            std::cerr << "Failed to load trained model: " << e.what() << "\n";
+            delete agent;
+            return 1;
+        }
     }
 
     std::random_device rd;
     std::mt19937 gen(rd());
 
-    GameState state;
     state.cursor_x = 0;
     state.cursor_y = board.get_height() > 4 ? 6 : board.get_height() - 1;
 
@@ -200,10 +227,11 @@ int main() {
         if (board.get_current_turn() == Player::Red) {
             handle_human_turn(board, state);
         } else {
-            handle_ai_turn(board, state, gen);
+            handle_ai_turn(board, state, gen, &env, agent);
         }
     }
 
+    delete agent;
     endwin(); // Restore standard terminal before quitting
     return 0;
 }
