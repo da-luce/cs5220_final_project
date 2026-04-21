@@ -24,3 +24,6 @@ add_subdirectory(stratego)
 
 # Include the frontend module
 add_subdirectory(frontend)
+
+# Include the RL module
+add_subdirectory(rl)

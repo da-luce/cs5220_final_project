@@ -1,4 +1,6 @@
 // More work needed here
+#pragma once
+#include <functional>
 
 template <typename ObsType, typename ActionType>
 void train_ppo(
@@ -6,7 +8,8 @@ void train_ppo(
     Agent<ObsType, ActionType>& agent, 
     RolloutBuffer<ObsType, ActionType>& buffer,
     int total_timesteps, 
-    int rollout_length
+    int rollout_length,
+    std::function<void(int)> on_rollout_end = nullptr
 ) {
     ObsType obs = env.reset();
 
@@ -42,5 +45,10 @@ void train_ppo(
 
         // 4. RESET BUFFER
         buffer.clear();
+        
+        // 5. EVALUATION CALLBACK
+        if (on_rollout_end) {
+            on_rollout_end(t + rollout_length);
+        }
     }
 }

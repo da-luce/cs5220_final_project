@@ -1,6 +1,7 @@
-#include "environment/stratego_tiny.cpp"
-#include "rl/stratego_tiny_agent.cpp"
-#include "rl/rollout_buffer.cpp"
+#include "../environment/stratego_tiny.cpp"
+#include "stratego_tiny_agent.cpp"
+#include "rollout_buffer.cpp"
+#include "ppo.cpp"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -71,7 +72,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::cout << "Starting Self-Play Training...\n";
+    std::cout << "Starting Batched Self-Play Training...\n";
     std::cout << "Output File: " << output_file << "\n";
     std::cout << "Max Iterations: " << max_iterations << "\n\n";
 
@@ -83,47 +84,15 @@ int main(int argc, char* argv[]) {
     champion.save_model("stratego_random_weights.pth");
 
     RolloutBuffer<StrategoObs, StrategoAction> buffer;
+    
+    // PPO Setup
+    int rollout_length = 2048; // Common standard sequence size for batched rollouts
+    int current_epoch = 0;
 
-    for (int epoch = 1; epoch <= max_iterations; ++epoch) {
-        auto obs = env.reset();
-        bool done = false;
-        std::vector<stratego::Player> players;
-
-        while (!done) {
-            players.push_back(env.get_board().get_current_turn());
-            
-            auto out = challenger.act(obs);
-            auto next = env.step(out.action);
-
-            buffer.add(obs, out.action, next.reward, out.value, out.log_prob, next.terminated || next.truncated, out.mask);
-            
-            obs = next.observation;
-            done = next.terminated || next.truncated;
-
-            if (done) {
-                // Standardize episode rewards: +1 for winner's moves, -1 for loser's moves
-                size_t step_count = buffer.rewards.size();
-                stratego::Player winner = stratego::Player::None;
-
-                if (!next.truncated) {
-                    if (next.reward > 0.5f) winner = players.back(); // Last player to act won
-                    else if (next.reward < -0.5f) winner = (players.back() == stratego::Player::Red) ? stratego::Player::Blue : stratego::Player::Red;
-                }
-
-                for (size_t i = 0; i < step_count; ++i) {
-                    if (winner == stratego::Player::None) buffer.rewards[i] = 0.0f;
-                    else if (players[i] == winner) buffer.rewards[i] = 1.0f;
-                    else buffer.rewards[i] = -1.0f;
-                }
-                
-                buffer.compute_advantages(0.0f, 0.99f, 0.95f);
-                challenger.update_weights(buffer);
-                buffer.clear();
-            }
-        }
-
-        if (epoch % eval_freq == 0) {
-            std::cout << "--- Epoch " << epoch << ": Evaluating Challenger vs Champion ---\n";
+    // Callback executes at the end of each rollout step inside `train_ppo`
+    auto eval_cb = [&](int it) {
+        if (it % eval_freq == 0) {
+            std::cout << "--- Iteration " << it << ": Evaluating Challenger vs Champion ---\n";
             float win_rate = 0.0f, draw_rate = 0.0f;
             evaluate_vs_champion(env, challenger, champion, eval_games, win_rate, draw_rate);
             std::cout << "Challenger Win Rate: " << (win_rate * 100.0f) << "% | Draw Rate: " << (draw_rate * 100.0f) << "%\n";
@@ -134,6 +103,9 @@ int main(int argc, char* argv[]) {
             }
             std::cout << "--------------------------------------------------\n";
         }
-    }
+    };
+
+    train_ppo(env, challenger, buffer, max_iterations * rollout_length, rollout_length, eval_cb);
+
     return 0;
 }
