@@ -45,7 +45,7 @@ make test --output-on-failure
 ## Training
 
 ```shell
-./stratego/train --iters 50000 --out custom_best_model.pth
+./rl/train --iters 50000 --out custom_best_model.pth
 ```
 
 # TODO: Training on Perlmutter
@@ -143,4 +143,4 @@ $$
 |A| = H \cdot W \cdot 4 \cdot D
 $$
 
-This gives us a fixed-size action space directly compatible with softmax policy heads. This mapping is fully reversible so we can decode the action index back into an actual move on the game board. Illegal actions are handled via masking or penalization during environment stepping.
+This gives us a fixed-size action space directly compatible with softmax policy heads. for a classic game of Stratego (H = 10, W = 10, D = 10), our action space has a size of 4000. This mapping is fully reversible so we can decode the action index back into an actual move on the game board. Illegal actions are handled via masking or penalization during environment stepping.

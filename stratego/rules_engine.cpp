@@ -5,8 +5,8 @@
 namespace stratego {
 
 bool RulesEngine::is_legal_move(const Board& board, const Move& move) {
-    if (move.start_x < 0 || move.start_x >= board.width || move.start_y < 0 || move.start_y >= board.height) return false;
-    if (move.end_x < 0 || move.end_x >= board.width || move.end_y < 0 || move.end_y >= board.height) return false;
+    if (move.start_x < 0 || move.start_x >= board.get_width() || move.start_y < 0 || move.start_y >= board.get_height()) return false;
+    if (move.end_x < 0 || move.end_x >= board.get_width() || move.end_y < 0 || move.end_y >= board.get_height()) return false;
 
     Piece start_piece = board.grid[board.index(move.start_x, move.start_y)];
     if (start_piece.owner != board.current_turn) return false;
@@ -87,13 +87,13 @@ std::vector<Move> RulesEngine::get_all_legal_moves(const Board& board, Player pl
     int dx[] = {0, 0, -1, 1};
     int dy[] = {-1, 1, 0, 0};
 
-    for (int y = 0; y < board.height; ++y) {
-        for (int x = 0; x < board.width; ++x) {
+    for (int y = 0; y < board.get_height(); ++y) {
+        for (int x = 0; x < board.get_width(); ++x) {
             if (board.grid[board.index(x, y)].owner == player) {
                 Piece p = board.grid[board.index(x, y)];
                 if (!p.is_mobile()) continue;
                 
-                int max_dist = (p.type == PieceType::Scout) ? std::max(board.width, board.height) : 1;
+                int max_dist = (p.type == PieceType::Scout) ? std::max(board.get_width(), board.get_height()) : 1;
 
                 for (int dir = 0; dir < 4; ++dir) {
                     for (int dist = 1; dist <= max_dist; ++dist) {
@@ -115,7 +115,7 @@ std::vector<Move> RulesEngine::get_legal_moves_for_piece(const Board& board, Pla
     std::vector<Move> moves;
 
     if (player != board.current_turn) return moves;
-    if (x < 0 || x >= board.width || y < 0 || y >= board.height) return moves;
+    if (x < 0 || x >= board.get_width() || y < 0 || y >= board.get_height()) return moves;
 
     Piece p = board.grid[board.index(x, y)];
     if (p.owner != player || !p.is_mobile()) return moves;
@@ -123,7 +123,7 @@ std::vector<Move> RulesEngine::get_legal_moves_for_piece(const Board& board, Pla
     int dx[] = {0, 0, -1, 1};
     int dy[] = {-1, 1, 0, 0};
 
-    int max_dist = (p.type == PieceType::Scout) ? std::max(board.width, board.height) : 1;
+    int max_dist = (p.type == PieceType::Scout) ? std::max(board.get_width(), board.get_height()) : 1;
 
     for (int dir = 0; dir < 4; ++dir) {
         for (int dist = 1; dist <= max_dist; ++dist) {

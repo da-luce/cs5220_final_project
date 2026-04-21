@@ -10,8 +10,8 @@ bool GameSerializer::save_to_file(const Board& board, const std::string& filenam
     if (!ofs) return false;
 
     // 1. Write metadata (dimensions, current turn)
-    ofs.write(reinterpret_cast<const char*>(&board.width), sizeof(board.width));
-    ofs.write(reinterpret_cast<const char*>(&board.height), sizeof(board.height));
+    ofs.write(reinterpret_cast<const char*>(&board.config.width), sizeof(board.config.width));
+    ofs.write(reinterpret_cast<const char*>(&board.config.height), sizeof(board.config.height));
     char turn = static_cast<char>(board.current_turn);
     ofs.write(&turn, sizeof(turn));
 
@@ -62,14 +62,14 @@ bool GameSerializer::load_from_file(Board& board, const std::string& filename) {
     if (ifs.fail()) return false;
 
     // 2. Update board state
-    board.width = new_width;
-    board.height = new_height;
+    board.config.width = new_width;
+    board.config.height = new_height;
     board.current_turn = static_cast<Player>(turn);
     board.move_count = 0;
     board.move_history.clear();
     board.red_chase_hashes.clear();
     board.blue_chase_hashes.clear();
-    board.grid.resize(board.width * board.height);
+    board.grid.resize(board.config.width * board.config.height);
 
     // 3. Read grid data
     for (auto& piece : board.grid) {

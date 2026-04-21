@@ -4,6 +4,7 @@
 #pragma once
 #include <vector>
 #include <string>
+#include <map>
 
 namespace stratego {
 
@@ -14,13 +15,6 @@ enum class Player {
     Red,
     Blue,
     None
-};
-
-enum class GameType {
-    Classic,
-    Tiny,
-    Quick,
-    Barrage
 };
 
 enum class SetupType {
@@ -46,6 +40,40 @@ enum class PieceType {
     Flag = 12,
     Water = 13
 };
+
+using PieceCounts = std::map<PieceType, int>;
+
+struct Rect {
+    int x;
+    int y;
+    int w;
+    int h;
+
+    bool contains(int px, int py) const {
+        return px >= x && px < x + w &&
+               py >= y && py < y + h;
+    }
+};
+
+// Defines a game type
+struct GameConfig {
+    int width;
+    int height;
+    int setup_rows;
+    int max_moves;
+    PieceCounts piece_counts;
+    std::vector<Rect> lakes;
+};
+
+// A few common modes are pre-defined
+enum class GameType {
+    Classic,
+    Tiny,
+    Quick,
+    Barrage
+};
+
+GameConfig get_config_for_game_type(GameType type);
 
 struct Piece {
     PieceType type{PieceType::Empty};
@@ -84,13 +112,13 @@ enum class CombatResult {
     Draw
 };
 
+
+// An actual instance of a game
 class Board {
 private:
-    int width;
-    int height;
+    GameConfig config;
     std::vector<Piece> grid;
     Player current_turn;
-    int max_moves;
     int move_count;
     std::vector<Move> move_history;
 
@@ -103,21 +131,24 @@ private:
     [[nodiscard]] std::string get_board_state() const;
 
     // Map 2D coordinates to 1D vector
-    [[nodiscard]] inline int index(int x, int y) const { return y * width + x; }
+    [[nodiscard]] inline int index(int x, int y) const { return y * config.width + x; }
+
+    // Resets board with standard water placement
+    void clear();
 
 public:
     friend class RulesEngine;
     friend class GameSerializer;
 
-    Board(int w = 10, int h = 10, int max_moves = 2000);
-
-    // Resets board with standard water placement
-    void initialize_empty(); 
+    Board(const GameConfig& config = get_config_for_game_type(GameType::Classic));
 
     // Initializes board layout and randomized piece placement for a specific game type
-    void initialize_game(GameType type, SetupType setup = SetupType::Default);
+    void initialize_game(SetupType setup = SetupType::Default);
 
     // Set pieces during setup phase
+    // (0, 0) is the top-left corner of the board
+    // x increases left -> right
+    // y increases top -> bottom
     bool place_piece(int x, int y, PieceType type, Player owner);
 
     // Move validation and generation interfaces
@@ -133,8 +164,9 @@ public:
     bool load_from_file(const std::string& filename);
 
     // Frontend getters
-    [[nodiscard]] int get_width() const { return width; }
-    [[nodiscard]] int get_height() const { return height; }
+    [[nodiscard]] int get_width() const { return config.width; }
+    [[nodiscard]] int get_height() const { return config.height; }
+    [[nodiscard]] const GameConfig& get_config() const { return config; }
     [[nodiscard]] Piece get_piece(int x, int y) const;
     [[nodiscard]] Player get_current_turn() const { return current_turn; }
 };

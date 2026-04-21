@@ -55,11 +55,32 @@ public:
             float next_non_terminal = 1.0f - static_cast<float>(is_terminals[step]);
             float next_val = (step == step_count - 1) ? next_value : values[step + 1];
             
-            float delta = rewards[step] + gamma * next_val * next_non_terminal - values[step];
-            last_gae_lam = delta + gamma * gae_lambda * next_non_terminal * last_gae_lam;
+            // Invert next_val and last_gae_lam because the next state is from the
+            // opponent's perspective in an alternating zero-sum game!
+            float delta = rewards[step] + gamma * (-next_val) * next_non_terminal - values[step];
+            last_gae_lam = delta + gamma * gae_lambda * next_non_terminal * (-last_gae_lam);
             
             advantages[step] = last_gae_lam;
             returns[step] = advantages[step] + values[step];
+        }
+    }
+
+    void compute_monte_carlo_returns(float gamma) {
+        size_t n = rewards.size();
+        advantages.assign(n, 0.0f);
+        returns.assign(n, 0.0f);
+
+        float discounted_sum = 0;
+        // Walk backwards from the end of the buffer
+        for (int i = n - 1; i >= 0; --i) {
+            if (is_terminals[i]) discounted_sum = 0; // Reset at game boundaries
+            discounted_sum = rewards[i] + (gamma * discounted_sum);
+            returns[i] = discounted_sum;
+        }
+
+        // Advantage = Actual Return - Critic's Prediction
+        for (size_t i = 0; i < n; ++i) {
+            advantages[i] = returns[i] - values[i];
         }
     }
 };

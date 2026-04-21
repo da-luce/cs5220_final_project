@@ -18,3 +18,8 @@ add_test(NAME TestMoveLimit COMMAND test_stratego move_limit)
 add_test(NAME TestTwoSquaresRule COMMAND test_stratego two_squares_rule)
 add_test(NAME TestMoreSquaresRule COMMAND test_stratego more_squares_rule)
 add_test(NAME TestSaveLoadHistory COMMAND test_stratego save_load_history)
+
+# Ensure the environment tests are built and registered with CTest
+if(NOT TARGET test_stratego_env)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../environment ${CMAKE_CURRENT_BINARY_DIR}/environment)
+endif()

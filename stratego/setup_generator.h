@@ -23,7 +23,7 @@ PieceDistribution load_distributions_from_json(const std::string& filename);
 // piece to be placed, it samples an available slot based on the weighted
 // probabilities from the distribution data, ensuring stronger pieces are more
 // likely to appear in strategically sound locations.
-void generate_probabilistic_setup(Board& board, Player player, const PieceDistribution& distributions);
+void generate_probabilistic_setup(Board& board, Player player, const PieceCounts& piece_counts, const PieceDistribution& distributions);
 
 } // namespace setup
 } // namespace stratego

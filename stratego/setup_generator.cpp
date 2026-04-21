@@ -53,17 +53,7 @@ PieceDistribution load_distributions_from_json(const std::string& filename) {
     return distributions;
 }
 
-void generate_probabilistic_setup(Board& board, Player player, const PieceDistribution& distributions) {
-    // Standard piece counts for a 40-piece Stratego game.
-    const std::map<PieceType, int> piece_counts = {
-        {PieceType::Marshal, 1}, {PieceType::General, 1},
-        {PieceType::Colonel, 2}, {PieceType::Major, 3},
-        {PieceType::Captain, 4}, {PieceType::Lieutenant, 4},
-        {PieceType::Sergeant, 4}, {PieceType::Miner, 5},
-        {PieceType::Scout, 8}, {PieceType::Spy, 1},
-        {PieceType::Bomb, 6}, {PieceType::Flag, 1}
-    };
-
+void generate_probabilistic_setup(Board& board, Player player, const PieceCounts& piece_counts, const PieceDistribution& distributions) {
     std::vector<PieceType> pieces_to_place;
     for (const auto& pair : piece_counts) {
         for (int i = 0; i < pair.second; ++i) {

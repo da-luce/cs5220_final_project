@@ -1,4 +1,4 @@
-#include "../environment/stratego_tiny.cpp"
+#include "../environment/stratego_env.cpp"
 #include "../rl/stratego_tiny_agent.cpp"
 
 #include "stratego.h"
@@ -185,7 +185,7 @@ int main() {
         return 0;
     }
 
-    StrategoEnvironment env;
+    StrategoEnvironment env(board);
     StrategoTinyAgent* agent = nullptr;
 
     if (state.ai_type == "Trained AI") {

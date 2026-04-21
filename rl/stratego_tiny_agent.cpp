@@ -1,6 +1,6 @@
 #include "agent.cpp"
 #include "rollout_buffer.cpp"
-#include "../environment/stratego_tiny.cpp"
+#include "../environment/stratego_env.cpp"
 #include <vector>
 #include <random>
 #include <cmath>
@@ -11,19 +11,16 @@
 struct StrategoNetImpl : torch::nn::Module {
     torch::nn::Conv2d conv1{nullptr};
     torch::nn::Conv2d conv2{nullptr};
-    torch::nn::Linear fc1{nullptr};
+    torch::nn::Linear shared_fc{nullptr}; // Change: Shared FC like Python
     torch::nn::Linear actor_head{nullptr};
     torch::nn::Linear critic_head{nullptr};
 
     StrategoNetImpl(int channels, int width, int height, int action_dim) {
-        // Two spatial convolution layers to extract board features
         conv1 = register_module("conv1", torch::nn::Conv2d(torch::nn::Conv2dOptions(channels, 64, 3).padding(1)));
         conv2 = register_module("conv2", torch::nn::Conv2d(torch::nn::Conv2dOptions(64, 128, 3).padding(1)));
         
         int flat_size = 128 * width * height;
-        fc1 = register_module("fc1", torch::nn::Linear(flat_size, 256));
-        
-        // Dual Heads: Policy (Actor) and Value (Critic)
+        shared_fc = register_module("shared_fc", torch::nn::Linear(flat_size, 256));
         actor_head = register_module("actor_head", torch::nn::Linear(256, action_dim));
         critic_head = register_module("critic_head", torch::nn::Linear(256, 1));
     }
@@ -31,9 +28,12 @@ struct StrategoNetImpl : torch::nn::Module {
     std::tuple<torch::Tensor, torch::Tensor> forward(torch::Tensor x) {
         x = torch::relu(conv1(x));
         x = torch::relu(conv2(x));
-        x = x.reshape({x.size(0), -1}); // Flatten (Batch, C*H*W)
-        x = torch::relu(fc1(x));
-        return {actor_head(x), torch::tanh(critic_head(x))};
+        x = x.reshape({x.size(0), -1});
+        
+        torch::Tensor features = torch::relu(shared_fc(x));
+        
+        // Add Tanh back to the critic to match Python's output range [-1, 1]
+        return {actor_head(features), torch::tanh(critic_head(features))};
     }
 };
 TORCH_MODULE(StrategoNet);
@@ -89,11 +89,14 @@ public:
         if (legal_actions.empty()) {
             return {0, 0.0f, 0.0f, std::vector<float>(env.action_dim(), -1e9f)}; // Fallback if no moves are available
         }
-        
-        // Convert HWC observation vector into PyTorch CHW Tensor
-        torch::Tensor obs_tensor = torch::from_blob((void*)obs.data(), {1, h, w, 9}, torch::kFloat32);
-        obs_tensor = obs_tensor.permute({0, 3, 1, 2}).clone(); // (Batch, Channels, Height, Width)
 
+        // --- UPDATE 1: READ DIRECTLY AS CHW ---
+        // Since encode_board now provides CHW, we map it directly.
+        // Shape: {Batch=1, Channels=9, Height, Width}
+        torch::Tensor obs_tensor = torch::from_blob((void*)obs.data(), 
+                                   {1, 9, (long)env.get_board().get_height(), (long)env.get_board().get_width()}, 
+                                   torch::kFloat32).clone();
+        
         auto [logits, value] = net->forward(obs_tensor);
         
         // Action Masking: Set illegal actions to -infinity
@@ -126,55 +129,53 @@ public:
     }
 
     void update_weights(RolloutBuffer<StrategoObs, StrategoAction>& buffer) override {
+        // 0. Define Hyperparameters and Dimensions
         int ppo_epochs = 4;
         float clip_eps = 0.2f;
-        float c1 = 0.5f;   // Critic loss coefficient
-        float c2 = 0.01f;  // Entropy loss coefficient
-
+        float c1 = 0.5f;   // Critic loss
+        float c2 = 0.01f;  // Entropy
+        
+        int w = env.get_board().get_width();
+        int h = env.get_board().get_height();
         size_t batch_size = buffer.observations.size();
         if (batch_size == 0) return;
 
-        int w = env.get_board().get_width();
-        int h = env.get_board().get_height();
-
-        // 1. Flatten the batch of observations into a contiguous memory block
+        // 1. Flatten Observations and Masks
         std::vector<float> flat_obs;
         std::vector<float> flat_masks;
-        flat_obs.reserve(batch_size * w * h * 9);
-        // Ensure buffer.masks exists! If it doesn't, add `std::vector<std::vector<float>> masks` to RolloutBuffer.
+        flat_obs.reserve(batch_size * 9 * w * h);
         flat_masks.reserve(batch_size * env.action_dim());
-        
+
         for (const auto& obs : buffer.observations) {
             flat_obs.insert(flat_obs.end(), obs.begin(), obs.end());
         }
-        // Flatten masks stored during act()
-        for (const auto& mask : buffer.masks) {
-            flat_masks.insert(flat_masks.end(), mask.begin(), mask.end());
+        for (const auto& m : buffer.masks) {
+            flat_masks.insert(flat_masks.end(), m.begin(), m.end());
         }
 
-        // 2. Convert Buffer Data to PyTorch Tensors
-        torch::Tensor obs_tensor = torch::from_blob(flat_obs.data(), {(long)batch_size, h, w, 9}, torch::kFloat32);
+        // 2. Create Tensors
+        torch::Tensor obs_tensor = torch::from_blob(flat_obs.data(), {(long)batch_size, 9, (long)h, (long)w}, torch::kFloat32).clone();
         torch::Tensor masks_tensor = torch::from_blob(flat_masks.data(), {(long)batch_size, (long)env.action_dim()}, torch::kFloat32).clone();
         
-        obs_tensor = obs_tensor.permute({0, 3, 1, 2}).clone(); // (N, C, H, W)
-
-        // Convert StrategoAction (int32) into Int64 for the PyTorch `gather` operation
         torch::Tensor old_actions = torch::from_blob(buffer.actions.data(), {(long)batch_size}, torch::kInt32).to(torch::kInt64).clone();
         torch::Tensor old_log_probs = torch::from_blob(buffer.log_probs.data(), {(long)batch_size}, torch::kFloat32).clone();
         torch::Tensor returns = torch::from_blob(buffer.returns.data(), {(long)batch_size}, torch::kFloat32).clone();
         torch::Tensor advantages = torch::from_blob(buffer.advantages.data(), {(long)batch_size}, torch::kFloat32).clone();
 
-        // Advantage Normalization (Standard PPO practice for gradient stability)
+        // Normalization (matches Python)
+        if (batch_size > 1 && returns.std().item<float>() > 1e-5) {
+            returns = (returns - returns.mean()) / (returns.std() + 1e-5f);
+        }
         if (batch_size > 1) {
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8f);
         }
 
-        // 3. PPO Optimization Loop
+        // 3. PPO Epoch Loop
         for (int epoch = 0; epoch < ppo_epochs; ++epoch) {
             auto [logits, values] = net->forward(obs_tensor);
-            values = values.squeeze(-1); // Match the (Batch) shape of returns
+            values = values.squeeze(-1);
 
-            // Apply the masks stored from the rollout phase before softmax!
+            // Apply masks
             logits = logits + masks_tensor;
             
             torch::Tensor log_probs_dist = torch::log_softmax(logits, /*dim=*/-1);
@@ -183,8 +184,8 @@ public:
             // Extract log probabilities for the specific actions that were actually taken
             torch::Tensor new_log_probs = log_probs_dist.gather(1, old_actions.unsqueeze(1)).squeeze(1);
             
-            // Entropy for exploration bonus
-            torch::Tensor entropy = -(probs_dist * log_probs_dist).sum(-1);
+            // Entropy for exploration bonus, handling NaNs from 0 * -inf masks
+            torch::Tensor entropy = torch::nan_to_num(-(probs_dist * log_probs_dist), 0.0).sum(-1);
 
             // Probability ratio: r_t(θ) = exp(new_log_prob - old_log_prob)
             torch::Tensor ratio = torch::exp(new_log_probs - old_log_probs);

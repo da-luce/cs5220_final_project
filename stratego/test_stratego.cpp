@@ -135,7 +135,9 @@ void test_save_load() {
 }
 
 void test_move_limit() {
-    Board board(10, 10, 4); // Limit of 4 moves
+    GameConfig config = get_config_for_game_type(GameType::Classic);
+    config.max_moves = 4;
+    Board board(config); // Limit of 4 moves
     board.place_piece(0, 0, PieceType::Scout, Player::Red);
     board.place_piece(9, 9, PieceType::Scout, Player::Blue);
 
@@ -199,6 +201,7 @@ void test_save_load_history() {
 
     std::remove(filename.c_str());
 }
+
 
 int main(int argc, char* argv[]) {
     if (argc > 1) {

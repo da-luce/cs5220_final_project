@@ -82,8 +82,11 @@ bool show_start_menu(Board& board, GameState& state) {
                                           (game_type == "Barrage (10x10)") ? GameType::Barrage :
                                           (game_type == "Quick (8x8)") ? GameType::Quick : GameType::Tiny;
             SetupType selected_setup_type = (layout == "Probabilistic (Dobby/Oewesok)") ? SetupType::Probabilistic : SetupType::Random;
-            
-            board.initialize_game(selected_game_type, selected_setup_type);
+
+            // Re-initialize the board with the selected game configuration
+            GameConfig config = get_config_for_game_type(selected_game_type);
+            board = Board(config);
+            board.initialize_game(selected_setup_type);
             return true;
         }
     }

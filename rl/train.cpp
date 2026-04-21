@@ -1,4 +1,4 @@
-#include "../environment/stratego_tiny.cpp"
+#include "../environment/stratego_env.cpp"
 #include "stratego_tiny_agent.cpp"
 #include "rollout_buffer.cpp"
 #include "ppo.cpp"
@@ -59,7 +59,7 @@ void evaluate_vs_champion(StrategoEnvironment& env, StrategoTinyAgent& challenge
 int main(int argc, char* argv[]) {
     std::string output_file = "stratego_best_model.pth";
     int max_iterations = 20000;
-    int eval_freq = 500;
+    int eval_freq = 10;
     int eval_games = 100;
     float win_threshold = 0.55f;
 
@@ -69,6 +69,8 @@ int main(int argc, char* argv[]) {
             output_file = argv[++i];
         } else if (arg == "--iters" && i + 1 < argc) {
             max_iterations = std::stoi(argv[++i]);
+        } else if (arg == "--eval-freq" && i + 1 < argc) {
+            eval_freq = std::stoi(argv[++i]);
         }
     }
 
@@ -76,7 +78,10 @@ int main(int argc, char* argv[]) {
     std::cout << "Output File: " << output_file << "\n";
     std::cout << "Max Iterations: " << max_iterations << "\n\n";
 
-    StrategoEnvironment env;
+    stratego::GameConfig config = stratego::get_config_for_game_type(stratego::GameType::Tiny);
+    stratego::Board board(config);
+    board.initialize_game(stratego::SetupType::Random);
+    StrategoEnvironment env(board);
     StrategoTinyAgent challenger(env);
     StrategoTinyAgent champion(env);
 
@@ -91,7 +96,13 @@ int main(int argc, char* argv[]) {
 
     // Callback executes at the end of each rollout step inside `train_ppo`
     auto eval_cb = [&](int it) {
-        if (it % eval_freq == 0) {
+        current_epoch++;
+        
+        if (current_epoch % 10 == 0 || current_epoch == 1) {
+            std::cout << "Completed rollout " << current_epoch << " / " << max_iterations << " (" << it << " timesteps)\n";
+        }
+
+        if (current_epoch % eval_freq == 0) {
             std::cout << "--- Iteration " << it << ": Evaluating Challenger vs Champion ---\n";
             float win_rate = 0.0f, draw_rate = 0.0f;
             evaluate_vs_champion(env, challenger, champion, eval_games, win_rate, draw_rate);
