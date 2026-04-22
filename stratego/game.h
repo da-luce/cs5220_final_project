@@ -3,6 +3,7 @@
 #include "engine.h" 
 #include <vector>
 #include <string>
+#include <cstddef>
 
 namespace stratego {
 
@@ -11,6 +12,8 @@ enum class SetupType {
     Random,
     Probabilistic
 };
+
+using GameBinary = std::vector<std::byte>;
 
 class Game {
 private:
@@ -54,9 +57,9 @@ public:
     // Executes the move via Engine, updates histories, and swaps the turn
     CombatResult execute_move(const Move& move);
 
-    // --- File I/O ---
-    [[nodiscard]] bool save_to_file(const std::string& filename) const;
-    bool load_from_file(const std::string& filename);
+    // Serialization
+    [[nodiscard]] GameBinary serialize() const;
+    void deserialize(const GameBinary& data);
 
     // --- Frontend Getters ---
     [[nodiscard]] Player get_current_turn() const { return current_turn; }

@@ -1,7 +1,8 @@
 #include "game.h"
-#include <fstream>
 #include <random>
 #include <algorithm>
+#include <cstring>
+#include <stdexcept>
 
 namespace stratego {
 
@@ -90,75 +91,84 @@ CombatResult Game::execute_move(const Move& move) {
 
 // --- Binary Serialization ---
 
-bool Game::save_to_file(const std::string& filename) const {
-    std::ofstream out(filename, std::ios::binary);
-    if (!out) return false;
+GameBinary Game::serialize() const {
+    GameBinary data;
+
+    auto append_data = [&data](const void* ptr, size_t size) {
+        const std::byte* byte_ptr = static_cast<const std::byte*>(ptr);
+        data.insert(data.end(), byte_ptr, byte_ptr + size);
+    };
 
     // 1. Write basic state
-    out.write(reinterpret_cast<const char*>(&current_turn), sizeof(current_turn));
-    out.write(reinterpret_cast<const char*>(&move_count), sizeof(move_count));
+    append_data(&current_turn, sizeof(current_turn));
+    append_data(&move_count, sizeof(move_count));
 
     // 2. Write board state (Assuming grid size doesn't change from BoardConfig)
     size_t grid_size = board.grid.size();
-    out.write(reinterpret_cast<const char*>(&grid_size), sizeof(grid_size));
+    append_data(&grid_size, sizeof(grid_size));
     if (grid_size > 0) {
-        out.write(reinterpret_cast<const char*>(board.grid.data()), grid_size * sizeof(Piece));
+        append_data(board.grid.data(), grid_size * sizeof(Piece));
     }
 
     // 3. Write Move History
     size_t history_size = move_history.size();
-    out.write(reinterpret_cast<const char*>(&history_size), sizeof(history_size));
+    append_data(&history_size, sizeof(history_size));
     if (history_size > 0) {
-        out.write(reinterpret_cast<const char*>(move_history.data()), history_size * sizeof(Move));
+        append_data(move_history.data(), history_size * sizeof(Move));
     }
 
     // 4. Write Chase Hashes
     size_t hash_size = chase_hashes.size();
-    out.write(reinterpret_cast<const char*>(&hash_size), sizeof(hash_size));
+    append_data(&hash_size, sizeof(hash_size));
     if (hash_size > 0) {
-        out.write(reinterpret_cast<const char*>(chase_hashes.data()), hash_size * sizeof(GameHash));
+        append_data(chase_hashes.data(), hash_size * sizeof(GameHash));
     }
 
-    return out.good();
+    return data;
 }
 
-bool Game::load_from_file(const std::string& filename) {
-    std::ifstream in(filename, std::ios::binary);
-    if (!in) return false;
+void Game::deserialize(const GameBinary& data) {
+    size_t offset = 0;
+
+    auto read_data = [&data, &offset](void* dest, size_t size) {
+        if (offset + size > data.size()) {
+            throw std::runtime_error("Deserialization failed: out of bounds");
+        }
+        std::memcpy(dest, data.data() + offset, size);
+        offset += size;
+    };
 
     // 1. Read basic state
-    in.read(reinterpret_cast<char*>(&current_turn), sizeof(current_turn));
-    in.read(reinterpret_cast<char*>(&move_count), sizeof(move_count));
+    read_data(&current_turn, sizeof(current_turn));
+    read_data(&move_count, sizeof(move_count));
 
     // 2. Read board state
     size_t grid_size = 0;
-    in.read(reinterpret_cast<char*>(&grid_size), sizeof(grid_size));
+    read_data(&grid_size, sizeof(grid_size));
     if (grid_size > 0) {
         board.grid.resize(grid_size);
-        in.read(reinterpret_cast<char*>(board.grid.data()), grid_size * sizeof(Piece));
+        read_data(board.grid.data(), grid_size * sizeof(Piece));
     }
 
     // 3. Read Move History
     size_t history_size = 0;
-    in.read(reinterpret_cast<char*>(&history_size), sizeof(history_size));
+    read_data(&history_size, sizeof(history_size));
     if (history_size > 0) {
         move_history.resize(history_size);
-        in.read(reinterpret_cast<char*>(move_history.data()), history_size * sizeof(Move));
+        read_data(move_history.data(), history_size * sizeof(Move));
     } else {
         move_history.clear();
     }
 
     // 4. Read Chase Hashes
     size_t hash_size = 0;
-    in.read(reinterpret_cast<char*>(&hash_size), sizeof(hash_size));
+    read_data(&hash_size, sizeof(hash_size));
     if (hash_size > 0) {
         chase_hashes.resize(hash_size);
-        in.read(reinterpret_cast<char*>(chase_hashes.data()), hash_size * sizeof(GameHash));
+        read_data(chase_hashes.data(), hash_size * sizeof(GameHash));
     } else {
         chase_hashes.clear();
     }
-
-    return in.good();
 }
 
 } // namespace stratego

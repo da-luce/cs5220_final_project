@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 #include "engine.h"
-#include <cstdio>   // For std::remove
 #include <string>
 
 using namespace stratego;
@@ -101,9 +100,7 @@ TEST(EngineTest, CombatResolutions) {
     EXPECT_EQ(res2, CombatResult::AttackerWins); // Spy kills Marshal
 }
 
-TEST(EngineTest, SaveLoad) {
-    const std::string filename = "test_save.bin";
-    
+TEST(EngineTest, SerializeDeserialize) {
     Game game1;
     game1.place_piece(0, 7, PieceType::Marshal, Player::Red);
     game1.place_piece(0, 6, PieceType::Spy, Player::Red); // Attacker
@@ -114,11 +111,12 @@ TEST(EngineTest, SaveLoad) {
     game1.execute_move({0, 6, 0, 5}); 
     
     // Save the state after the move
-    EXPECT_TRUE(game1.save_to_file(filename));
+    GameBinary data = game1.serialize();
+    EXPECT_FALSE(data.empty());
 
     // Load the state into a new, empty board
     Game game2;
-    EXPECT_TRUE(game2.load_from_file(filename));
+    EXPECT_NO_THROW(game2.deserialize(data));
 
     // Compare the two boards to ensure they are identical
     EXPECT_EQ(game1.get_current_turn(), game2.get_current_turn());
@@ -133,9 +131,6 @@ TEST(EngineTest, SaveLoad) {
             EXPECT_EQ(p1.revealed, p2.revealed);
         }
     }
-
-    // Clean up the test file
-    std::remove(filename.c_str());
 }
 
 TEST(EngineTest, TwoSquaresRule) {
@@ -172,8 +167,7 @@ TEST(EngineTest, MoreSquaresRule) {
     EXPECT_FALSE(game.is_legal_move({1, 3, 1, 2}));
 }
 
-TEST(EngineTest, SaveLoadHistory) {
-    const std::string filename = "test_save_history.bin";
+TEST(EngineTest, SerializeDeserializeHistory) {
     Game game1;
     game1.place_piece(0, 0, PieceType::Scout, Player::Red);
     game1.place_piece(9, 9, PieceType::Scout, Player::Blue);
@@ -185,15 +179,13 @@ TEST(EngineTest, SaveLoadHistory) {
     EXPECT_EQ(game1.execute_move({0, 0, 0, 1}), CombatResult::MovedToEmpty); // R
     EXPECT_EQ(game1.execute_move({9, 9, 9, 8}), CombatResult::MovedToEmpty); // B
     
-    EXPECT_TRUE(game1.save_to_file(filename));
+    GameBinary data = game1.serialize();
 
     Game game2;
-    EXPECT_TRUE(game2.load_from_file(filename));
+    EXPECT_NO_THROW(game2.deserialize(data));
     
     // Ensures that the move history/hashes were saved and loaded correctly
     EXPECT_FALSE(game2.is_legal_move({0, 1, 0, 0}));
-
-    std::remove(filename.c_str());
 }
 
 TEST(EngineTest, FlippedMoveLogic) {
