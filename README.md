@@ -40,7 +40,7 @@ make
 ## Run Terminal Game
 
 ```shell
-./play
+./frontend/play
 ```
 
 ## Training

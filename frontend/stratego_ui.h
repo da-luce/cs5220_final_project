@@ -1,10 +1,13 @@
 #pragma once
-#include "../stratego/stratego.h"
+#include "../stratego/state.h"
+#include "../stratego/engine.h"
+#include "../agents/player_agent.h"
 #include <string>
+#include <optional>
 
 namespace stratego {
 
-struct GameState {
+struct UIGameState {
     int cursor_x = 0;
     int cursor_y = 0;
     int selected_x = -1;
@@ -26,7 +29,16 @@ struct GameState {
 const char* piece_to_str(PieceType type);
 const char* piece_name(PieceType type);
 
-bool show_start_menu(Board& board, GameState& state);
-void render_board(const Board& board, const GameState& state);
+struct GameSettings {
+    GameType game_type;
+    state::SetupType setup_type;
+    AIType ai_type;
+    bool new_game = true;
+    std::string load_filename;
+    std::string model_path;
+};
+
+std::optional<GameSettings> start_menu();
+void render_board(const GameState& game_state, const UIGameState& state);
 
 } // namespace stratego

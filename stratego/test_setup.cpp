@@ -57,3 +57,68 @@ TEST(SetupGeneratorTest, DistributionResizingAndMath) {
     ExpectValidDistribution(dist_2x5[PieceType::Flag]);
     ExpectValidDistribution(dist_2x5[PieceType::Bomb]);
 }
+
+TEST(SetupGeneratorTest, RandomSetupBoundingBoxes) {
+    Board board(get_config_for_game_type(GameType::Classic));
+    
+    generate_random_setup(board, Player::Blue);
+    generate_random_setup(board, Player::Red);
+    
+    int red_count = 0;
+    int blue_count = 0;
+    
+    int height = board.get_height();
+    int setup_rows = board.get_config().setup_rows;
+    
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < board.get_width(); ++x) {
+            Piece p = board.get_piece(x, y);
+            if (p.owner == Player::Red) {
+                red_count++;
+                EXPECT_GE(y, height - setup_rows) << "Red piece placed too high at y=" << y;
+                EXPECT_LT(y, height) << "Red piece placed out of bounds at y=" << y;
+            }
+            if (p.owner == Player::Blue) {
+                blue_count++;
+                EXPECT_GE(y, 0) << "Blue piece placed out of bounds at y=" << y;
+                EXPECT_LT(y, setup_rows) << "Blue piece placed too low at y=" << y;
+            }
+        }
+    }
+
+    // Classic 10x10 mode expects exactly 40 pieces per side
+    EXPECT_EQ(red_count, 40);
+    EXPECT_EQ(blue_count, 40);
+}
+
+TEST(SetupGeneratorTest, ProbabilisticSetupBoundingBoxes) {
+    Board board(get_config_for_game_type(GameType::Classic));
+    
+    generate_probabilistic_setup(board, Player::Blue);
+    generate_probabilistic_setup(board, Player::Red);
+    
+    int red_count = 0;
+    int blue_count = 0;
+    
+    int height = board.get_height();
+    int setup_rows = board.get_config().setup_rows;
+    
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < board.get_width(); ++x) {
+            Piece p = board.get_piece(x, y);
+            if (p.owner == Player::Red) {
+                red_count++;
+                EXPECT_GE(y, height - setup_rows) << "Red piece placed too high at y=" << y;
+                EXPECT_LT(y, height) << "Red piece placed out of bounds at y=" << y;
+            }
+            if (p.owner == Player::Blue) {
+                blue_count++;
+                EXPECT_GE(y, 0) << "Blue piece placed out of bounds at y=" << y;
+                EXPECT_LT(y, setup_rows) << "Blue piece placed too low at y=" << y;
+            }
+        }
+    }
+
+    EXPECT_EQ(red_count, 40);
+    EXPECT_EQ(blue_count, 40);
+}

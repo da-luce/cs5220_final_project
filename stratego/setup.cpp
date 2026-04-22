@@ -200,13 +200,40 @@ void generate_probabilistic_setup(Board& board, Player player) {
         int board_x = chosen_slot.c;
         int board_y = 0;
 
-        if (player == Player::Red) {
-            board_y = chosen_slot.r; // Red's back row is at y=0
+        if (player == Player::Blue) {
+            board_y = chosen_slot.r; // Blue's back row is at y=0
         } else {
-            board_y = config.height - 1 - chosen_slot.r; // Blue's back row is at y=height-1
+            board_y = config.height - 1 - chosen_slot.r; // Red's back row is at y=height-1
         }
 
         board.place_piece(board_x, board_y, type, player);
+    }
+}
+
+void generate_random_setup(Board& board, Player player) {
+    const auto& config = board.get_config();
+
+    std::vector<PieceType> army;
+    for (const auto& [type, count] : config.piece_counts) {
+        for (int i = 0; i < count; ++i) {
+            army.push_back(type);
+        }
+    }
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::shuffle(army.begin(), army.end(), gen);
+
+    int start_y = (player == Player::Blue) ? 0 : config.height - config.setup_rows;
+    int end_y = (player == Player::Blue) ? config.setup_rows : config.height;
+
+    int idx = 0;
+    for (int y = start_y; y < end_y; ++y) {
+        for (int x = 0; x < config.width; ++x) {
+            if (idx < army.size()) {
+                board.place_piece(x, y, army[idx++], player);
+            }
+        }
     }
 }
 

@@ -13,3 +13,9 @@ public:
 };
 
 }
+
+enum class AIType {
+    Random,
+    Trained,
+    Human
+};

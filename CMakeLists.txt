@@ -18,9 +18,14 @@ FetchContent_Declare(googletest GIT_REPOSITORY https://github.com/google/googlet
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
-# 3. Enable CTest project-wide
+# 3. Find ncurses for the frontend
+find_package(Curses REQUIRED)
+include_directories(${CURSES_INCLUDE_DIRS})
+
+# 4. Enable CTest project-wide
 enable_testing()
 
-# 4. Orchestrate the subdirectories
+# 5. Orchestrate the subdirectories
 add_subdirectory(stratego)
+add_subdirectory(frontend)
 # add_subdirectory(environment)

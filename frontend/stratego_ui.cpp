@@ -3,6 +3,8 @@
 #include <ncurses.h>
 #include <vector>
 #include <string>
+#include <optional>
+#include <utility>
 
 namespace stratego {
 
@@ -43,63 +45,79 @@ const char* piece_name(PieceType type) {
     }
 }
 
-bool show_start_menu(Board& board, GameState& state) {
+std::optional<GameSettings> start_menu() {
     tui::Form form("=== STRATEGO SETUP ===");
 
     while (form.running()) {
-        std::string game_type = form.select("Select Game Type:", {"Classic (10x10)", "Barrage (10x10)", "Quick (8x8)", "Tiny (4x4)", "Load Game"});
-        if (game_type == "") continue;
+        GameSettings settings;
 
+        // 1. Select Game Type or Load
+        std::string game_type = form.select("Select Game Type:", {
+            "Classic (10x10)", "Barrage (10x10)", "Quick (8x8)", "Tiny (4x4)", "Load Game"
+        });
+        if (game_type.empty()) continue;
+
+        // --- LOAD GAME PATH ---
         if (game_type == "Load Game") {
             std::string filename = form.text_input("Enter filename:");
-            if (filename == "") continue;
+            if (filename.empty()) continue;
             
-            if (board.load_from_file(filename)) {
-                return true;
-            } else {
-                form.set_error("Error: Could not load file.");
-            }
-        } else {
-            std::vector<std::string> layouts = {"Random"};
-            if (game_type == "Classic (10x10)") layouts = {"Probabilistic (Dobby/Oewesok)", "Random"};
+            settings.new_game = false;
+            settings.load_filename = filename;
             
-            std::string layout = form.select("Select Starting Layout:", layouts);
-            if (layout == "") continue;
+            return settings;
+        } 
+        
+        // --- NEW GAME PATH ---
+        settings.new_game = true;
+        
+        settings.game_type = (game_type == "Classic (10x10)") ? GameType::Classic : 
+                             (game_type == "Barrage (10x10)") ? GameType::Barrage :
+                             (game_type == "Quick (8x8)")     ? GameType::Quick   : GameType::Tiny;
 
-                std::vector<std::string> ai_options = {"Random AI"};
-                if (game_type == "Tiny (4x4)") ai_options.push_back("Trained AI");
-
-                std::string ai = form.select("Select AI Opponent:", ai_options);
-            if (ai == "") continue;
-                state.ai_type = ai;
-
-                if (ai == "Trained AI") {
-                    state.model_path = form.text_input("Enter model path (.pth):");
-                    if (state.model_path == "") continue;
-                }
-
-            GameType selected_game_type = (game_type == "Classic (10x10)") ? GameType::Classic : 
-                                          (game_type == "Barrage (10x10)") ? GameType::Barrage :
-                                          (game_type == "Quick (8x8)") ? GameType::Quick : GameType::Tiny;
-            SetupType selected_setup_type = (layout == "Probabilistic (Dobby/Oewesok)") ? SetupType::Probabilistic : SetupType::Random;
-
-            // Re-initialize the board with the selected game configuration
-            GameConfig config = get_config_for_game_type(selected_game_type);
-            board = Board(config);
-            board.initialize_game(selected_setup_type);
-            return true;
+        // 2. Select Layout
+        std::vector<std::string> layouts = {"Random"};
+        if (settings.game_type == GameType::Classic) {
+            layouts = {"Probabilistic (Dobby/Oewesok)", "Random"};
         }
+        
+        std::string layout = form.select("Select Starting Layout:", layouts);
+        if (layout.empty()) continue;
+
+        settings.setup_type = (layout == "Probabilistic (Dobby/Oewesok)") ? state::SetupType::Probabilistic : state::SetupType::Random;
+
+        // 3. Select AI
+        std::vector<std::string> ai_options = {"Random AI"};
+        if (settings.game_type == GameType::Tiny) {
+            ai_options.push_back("Trained AI");
+        }
+
+        std::string ai = form.select("Select AI Opponent:", ai_options);
+        if (ai.empty()) continue;
+        
+        settings.ai_type = (ai == "Trained AI") ? AIType::Trained : AIType::Random;
+
+        // 4. Model Path (If Trained AI)
+        if (settings.ai_type == AIType::Trained) {
+            settings.model_path = form.text_input("Enter model path (.pth):");
+            if (settings.model_path.empty()) continue;
+        }
+
+        return settings;
     }
-    return false;
+    
+    // Returns empty if the user quit the menu (e.g., pressed ESC)
+    return std::nullopt; 
 }
 
-void render_board(const Board& board, const GameState& state) {
+void render_board(const GameState& game_state, const UIGameState& state) {
     erase(); // Use erase() instead of clear() to avoid flickering during 100ms redraws
     mvprintw(0, 0, "=== STRATEGO ===");
     
+    const Board& board = game_state.board;
     std::vector<Move> active_legal_moves;
     if (state.selected_x != -1 && state.selected_y != -1) {
-        active_legal_moves = board.get_legal_moves_for_piece(Player::Red, state.selected_x, state.selected_y);
+        active_legal_moves = Engine::get_legal_moves_for_piece(game_state, state.selected_x, state.selected_y);
     }
     
     int w = board.get_width();
@@ -153,7 +171,7 @@ void render_board(const Board& board, const GameState& state) {
                 std::string d_str = piece_to_str(state.pending_defender_type);
                 if (!d_str.empty() && d_str.back() == ' ') d_str.pop_back();
 
-                Player current_player = board.get_current_turn();
+                Player current_player = game_state.current_turn;
                 int attacker_color = (current_player == Player::Red) ? 1 : 2;
                 int defender_color = (current_player == Player::Red) ? 2 : 1;
 

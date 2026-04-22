@@ -32,5 +32,8 @@ PieceDistribution generate_distribution(const PieceDistribution& dist_4x10, int 
 // likely to appear in strategically sound locations.
 void generate_probabilistic_setup(Board& board, Player player);
 
+// Generates a completely random, valid piece setup for a given player.
+void generate_random_setup(Board& board, Player player);
+
 } // namespace setup
 } // namespace stratego
