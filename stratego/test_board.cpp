@@ -72,7 +72,7 @@ TEST(BoardTest, PlayerViewMasking) {
     board.grid[gen_idx].revealed = true;
 
     // Get Red's view
-    Board red_view = board.get_player_view(Player::Red);
+    Board red_view = board.get_masked_view(Player::Red);
 
     // 1. Red should see their own piece normally
     EXPECT_EQ(red_view.get_piece(0, 0).type, PieceType::Marshal);

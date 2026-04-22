@@ -2,7 +2,7 @@
 add_library(stratego_core 
     board.cpp 
     engine.cpp 
-    game.cpp 
+    state.cpp 
     setup.cpp
 )
 

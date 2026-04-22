@@ -5,12 +5,14 @@
 namespace stratego {
 
 bool Engine::is_legal_move(
-    const Board& board, 
-    const Move& move, 
-    Player current_player, 
-    const std::vector<GameHash>& chase_hashes, 
-    const std::vector<Move>& history) 
+    const GameState& state, 
+    const Move& move) 
 {
+    const Board& board = state.board;
+    Player current_player = state.current_turn;
+    const std::vector<GameHash>& chase_hashes = state.chase_hashes;
+    const std::vector<Move>& history = state.move_history;
+
     // 1. Boundary Checks
     if (move.start_x < 0 || move.start_x >= board.get_width() || move.start_y < 0 || move.start_y >= board.get_height()) return false;
     if (move.end_x < 0 || move.end_x >= board.get_width() || move.end_y < 0 || move.end_y >= board.get_height()) return false;
@@ -95,11 +97,10 @@ bool Engine::is_legal_move(
 }
 
 std::vector<Move> Engine::get_legal_moves_for_piece(
-    const Board& board, 
-    int x, int y, 
-    const std::vector<GameHash>& chase_hashes, 
-    const std::vector<Move>& history) 
+    const GameState& state, 
+    int x, int y) 
 {
+    const Board& board = state.board;
     std::vector<Move> moves;
 
     if (x < 0 || x >= board.get_width() || y < 0 || y >= board.get_height()) return moves;
@@ -128,7 +129,7 @@ std::vector<Move> Engine::get_legal_moves_for_piece(
             Move m{x, y, nx, ny};
             
             // Check if this specific destination is legal (handles repetition rules)
-            if (is_legal_move(board, m, player, chase_hashes, history)) {
+            if (is_legal_move(state, m)) {
                 moves.push_back(m);
             }
 
@@ -141,17 +142,16 @@ std::vector<Move> Engine::get_legal_moves_for_piece(
 }
 
 std::vector<Move> Engine::get_all_legal_moves(
-    const Board& board, 
-    Player player, 
-    const std::vector<GameHash>& chase_hashes, 
-    const std::vector<Move>& history) 
+    const GameState& state, 
+    Player player) 
 {
+    const Board& board = state.board;
     std::vector<Move> all_moves;
 
     for (int y = 0; y < board.get_height(); ++y) {
         for (int x = 0; x < board.get_width(); ++x) {
             if (board.grid[board.index(x, y)].owner == player) {
-                std::vector<Move> piece_moves = get_legal_moves_for_piece(board, x, y, chase_hashes, history);
+                std::vector<Move> piece_moves = get_legal_moves_for_piece(state, x, y);
                 all_moves.insert(all_moves.end(), piece_moves.begin(), piece_moves.end());
             }
         }
@@ -160,66 +160,97 @@ std::vector<Move> Engine::get_all_legal_moves(
     return all_moves;
 }
 
-CombatResult Engine::execute_move(Board& board, const Move& move) {
+CombatResult Engine::execute_move(GameState& state, const Move& move) {
+
+    // Check max move limit before executing
+    if (state.move_count >= state.max_moves) {
+        return CombatResult::Draw;
+    }
+
+    // Check legality
+    if (!is_legal_move(state, move)) {
+        return CombatResult::InvalidMove;
+    }
+
+    Board& board = state.board;
     int start_idx = board.index(move.start_x, move.start_y);
     int end_idx = board.index(move.end_x, move.end_y);
 
     Piece& attacker = board.grid[start_idx];
     Piece& defender = board.grid[end_idx];
 
+    CombatResult result;
+
     // 1. Moving to an empty space
     if (defender.is_empty()) {
         defender = attacker;
         attacker = Piece{PieceType::Empty, Player::None, false};
-        return CombatResult::MovedToEmpty;
+        result = CombatResult::MovedToEmpty;
     }
+    else {
+        // 2. Combat Resolution
+        attacker.revealed = true;
+        defender.revealed = true;
 
-    // 2. Combat Resolution
-    attacker.revealed = true;
-    defender.revealed = true;
-
-    if (defender.type == PieceType::Flag) {
-        defender = attacker;
-        attacker = Piece{PieceType::Empty, Player::None, false};
-        return CombatResult::FlagCaptured;
-    }
-
-    if (defender.type == PieceType::Bomb) {
-        if (attacker.type == PieceType::Miner) {
-            defender = attacker; // Miner defuses bomb
+        if (defender.type == PieceType::Flag) {
+            defender = attacker;
             attacker = Piece{PieceType::Empty, Player::None, false};
-            return CombatResult::AttackerWins;
-        } else {
-            attacker = Piece{PieceType::Empty, Player::None, false}; // Attacker blows up
-            return CombatResult::DefenderWins;
+            result = CombatResult::FlagCaptured;
+        }
+        else if (defender.type == PieceType::Bomb) {
+            if (attacker.type == PieceType::Miner) {
+                defender = attacker; // Miner defuses bomb
+                attacker = Piece{PieceType::Empty, Player::None, false};
+                result = CombatResult::AttackerWins;
+            } else {
+                attacker = Piece{PieceType::Empty, Player::None, false}; // Attacker blows up
+                result = CombatResult::DefenderWins;
+            }
+        }
+        else if (defender.type == PieceType::Marshal && attacker.type == PieceType::Spy) {
+            defender = attacker; // Spy kills Marshal when attacking
+            attacker = Piece{PieceType::Empty, Player::None, false};
+            result = CombatResult::AttackerWins;
+        }
+        else {
+            // Standard Rank Comparison (Higher integer value wins)
+            int attacker_val = static_cast<int>(attacker.type);
+            int defender_val = static_cast<int>(defender.type);
+
+            if (attacker_val > defender_val) {
+                defender = attacker;
+                attacker = Piece{PieceType::Empty, Player::None, false};
+                result = CombatResult::AttackerWins;
+            } 
+            else if (attacker_val < defender_val) {
+                attacker = Piece{PieceType::Empty, Player::None, false};
+                result = CombatResult::DefenderWins;
+            } 
+            else {
+                // Tie - Both destroyed
+                attacker = Piece{PieceType::Empty, Player::None, false};
+                defender = Piece{PieceType::Empty, Player::None, false};
+                result = CombatResult::BothDestroyed;
+            }
         }
     }
 
-    if (defender.type == PieceType::Marshal && attacker.type == PieceType::Spy) {
-        defender = attacker; // Spy kills Marshal when attacking
-        attacker = Piece{PieceType::Empty, Player::None, false};
-        return CombatResult::AttackerWins;
+    // Update match history
+    state.move_history.push_back(move);
+    state.move_count++;
+    
+    // Swap the turn to the opponent
+    state.current_turn = (state.current_turn == Player::Red) ? Player::Blue : Player::Red;
+    
+    // Log the resulting hash for repetition checking (More-Squares Rule)
+    state.chase_hashes.push_back(state.board.compute_hash(state.current_turn));
+
+    // Match-Level Limits
+    if (state.max_moves > 0 && state.move_count >= state.max_moves) {
+        return CombatResult::Draw;
     }
 
-    // Standard Rank Comparison (Higher integer value wins)
-    int attacker_val = static_cast<int>(attacker.type);
-    int defender_val = static_cast<int>(defender.type);
-
-    if (attacker_val > defender_val) {
-        defender = attacker;
-        attacker = Piece{PieceType::Empty, Player::None, false};
-        return CombatResult::AttackerWins;
-    } 
-    else if (attacker_val < defender_val) {
-        attacker = Piece{PieceType::Empty, Player::None, false};
-        return CombatResult::DefenderWins;
-    } 
-    else {
-        // Tie - Both destroyed
-        attacker = Piece{PieceType::Empty, Player::None, false};
-        defender = Piece{PieceType::Empty, Player::None, false};
-        return CombatResult::BothDestroyed;
-    }
+    return result;
 }
 
 Move Engine::get_flipped_move(const BoardConfig& config, const Move& move) {

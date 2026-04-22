@@ -101,7 +101,7 @@ public:
     bool place_piece(int x, int y, PieceType type, Player owner);
 
     // Returns a sanitized copy of the board from the perspective of the given player
-    [[nodiscard]] Board get_player_view(Player player) const;
+    [[nodiscard]] Board get_masked_view(Player player) const;
 
     // Returns a flipped version of the board (for the opponent's perspective)
     [[nodiscard]] Board get_flipped_board() const;

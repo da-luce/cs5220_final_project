@@ -117,7 +117,7 @@ void Board::clear() {
     }
 }
 
-Board Board::get_player_view(Player player) const {
+Board Board::get_masked_view(Player player) const {
     // Deep copy
     Board view_board = *this;
 
