@@ -13,7 +13,7 @@ target_link_libraries(stratego_core PUBLIC nlohmann_json::nlohmann_json)
 add_executable(test_stratego 
     test_board.cpp
     test_engine.cpp 
-    test_game.cpp 
+    test_state.cpp 
     test_setup.cpp
 )
 

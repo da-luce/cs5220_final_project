@@ -4,7 +4,7 @@
 
 using namespace stratego;
 
-TEST(GameTest, InitializationAndRandomSetup) {
+TEST(StateTest, InitializationAndRandomSetup) {
     // 1. Test Default/Empty Initialization
     GameState state;
     EXPECT_EQ(state.current_turn, Player::Red);
@@ -41,7 +41,7 @@ TEST(GameTest, InitializationAndRandomSetup) {
     EXPECT_EQ(blue_count, expected_pieces);
 }
 
-TEST(GameTest, SerializeDeserializeHistory) {
+TEST(StateTest, SerializeDeserializeHistory) {
     GameState state1;
     state1.board.place_piece(0, 0, PieceType::Scout, Player::Red);
     state1.board.place_piece(9, 9, PieceType::Scout, Player::Blue);
@@ -62,7 +62,7 @@ TEST(GameTest, SerializeDeserializeHistory) {
     EXPECT_FALSE(Engine::is_legal_move(state2, {0, 1, 0, 0}));
 }
 
-TEST(GameTest, HashConsistency) {
+TEST(StateTest, HashConsistency) {
     GameState state;
     state.board.place_piece(0, 0, PieceType::Miner, Player::Red);
     
