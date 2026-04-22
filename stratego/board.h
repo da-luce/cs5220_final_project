@@ -28,7 +28,8 @@ enum class PieceType {
     Marshal = 10,
     Bomb = 11,
     Flag = 12,
-    Water = 13
+    Water = 13,
+    Hidden = 14     // Not for use on the board, but for encoding hidden enemy pieces in observations
 };
 
 using PieceCounts = std::map<PieceType, int>;
@@ -98,6 +99,12 @@ public:
     // Set a piece
     // Top left is (0,0), x increases left->right, y increases top->bottom
     bool place_piece(int x, int y, PieceType type, Player owner);
+
+    // Returns a sanitized copy of the board from the perspective of the given player
+    [[nodiscard]] Board get_player_view(Player player) const;
+
+    // Returns a flipped version of the board (for the opponent's perspective)
+    [[nodiscard]] Board get_flipped_board() const;
 
     // Map 2D coordinates to 1D vector
     [[nodiscard]] inline int index(int x, int y) const { return y * config.width + x; }

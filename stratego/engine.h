@@ -48,6 +48,9 @@ public:
 
     // Modifies the board and returns the outcome of the action
     static CombatResult execute_move(Board& board, const Move& move);
+
+    // Utility for flipping moves when generating opponent views
+    static Move get_flipped_move(const BoardConfig& config, const Move& move);
 };
 
 } // namespace stratego

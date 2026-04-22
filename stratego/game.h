@@ -64,6 +64,11 @@ public:
     [[nodiscard]] int get_move_count() const { return move_count; }
     [[nodiscard]] const std::vector<Move>& get_history() const { return move_history; }
     [[nodiscard]] const std::vector<GameHash>& get_chase_hashes() const { return chase_hashes; }
+
+    // Expose engine flip utility for opponent view generation
+    [[nodiscard]] static Move get_flipped_move(const BoardConfig& config, const Move& move) {
+        return Engine::get_flipped_move(config, move);
+    }
 };
 
 } // namespace stratego

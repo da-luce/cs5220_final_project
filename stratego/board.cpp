@@ -117,6 +117,38 @@ void Board::clear() {
     }
 }
 
+Board Board::get_player_view(Player player) const {
+    // Deep copy
+    Board view_board = *this;
+
+    // 2. Scrub the hidden data
+    for (auto& piece : view_board.grid) {
+        // If the piece belongs to the opponent (and isn't just an empty square)
+        if (piece.owner != player && piece.owner != Player::None) {
+            
+            // If it hasn't been revealed in combat, mask its identity
+            if (!piece.revealed) {
+                piece.type = PieceType::Hidden; 
+            }
+        }
+    }
+
+    return view_board;
+}
+
+Board Board::get_flipped_board() const {
+    Board flipped(config);
+    for (int y = 0; y < config.height; ++y) {
+        for (int x = 0; x < config.width; ++x) {
+            Piece p = get_piece(x, y);
+            int flipped_x = config.width - 1 - x;
+            int flipped_y = config.height - 1 - y;
+            flipped.grid[flipped.index(flipped_x, flipped_y)] = p;
+        }
+    }
+    return flipped;
+}
+
 bool Board::place_piece(int x, int y, PieceType type, Player owner) {
     // 1. Check outer board boundaries
     if (x < 0 || x >= config.width || y < 0 || y >= config.height) {

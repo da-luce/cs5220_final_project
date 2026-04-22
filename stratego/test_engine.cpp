@@ -195,3 +195,36 @@ TEST(EngineTest, SaveLoadHistory) {
 
     std::remove(filename.c_str());
 }
+
+TEST(EngineTest, FlippedMoveLogic) {
+    BoardConfig config = get_config_for_game_type(GameType::Classic); // 10x10
+    
+    // A move from the top-left corner to one tile down
+    Move original{0, 0, 0, 1};
+    
+    // Flip it for the other player's perspective
+    Move flipped = Engine::get_flipped_move(config, original);
+    
+    // In a 10x10, (0,0) flips to (9,9)
+    // The destination (0,1) flips to (9,8)
+    EXPECT_EQ(flipped.start_x, 9);
+    EXPECT_EQ(flipped.start_y, 9);
+    EXPECT_EQ(flipped.end_x, 9);
+    EXPECT_EQ(flipped.end_y, 8);
+    
+    // Symmetry check: Flipping a flipped move should yield the original
+    Move back_to_original = Engine::get_flipped_move(config, flipped);
+    EXPECT_EQ(back_to_original.start_x, original.start_x);
+    EXPECT_EQ(back_to_original.end_y, original.end_y);
+}
+
+TEST(EngineTest, FlippedMoveQuickConfig) {
+    BoardConfig config = get_config_for_game_type(GameType::Quick); // 8x8
+    
+    Move original{2, 3, 3, 3}; // A move in the middle-ish
+    Move flipped = Engine::get_flipped_move(config, original);
+    
+    // (8-1-2) = 5, (8-1-3) = 4
+    EXPECT_EQ(flipped.start_x, 5);
+    EXPECT_EQ(flipped.start_y, 4);
+}

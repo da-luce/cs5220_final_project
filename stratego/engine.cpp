@@ -222,4 +222,13 @@ CombatResult Engine::execute_move(Board& board, const Move& move) {
     }
 }
 
+Move Engine::get_flipped_move(const BoardConfig& config, const Move& move) {
+    return Move{
+        config.width - 1 - move.start_x,
+        config.height - 1 - move.start_y,
+        config.width - 1 - move.end_x,
+        config.height - 1 - move.end_y
+    };
+}
+
 } // namespace stratego
