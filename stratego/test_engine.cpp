@@ -239,3 +239,75 @@ TEST(EngineTest, DirectGameStateUsage) {
     EXPECT_FALSE(Engine::is_legal_move(state, {0, 0, 0, 4}));
     EXPECT_FALSE(Engine::is_legal_move(state, {0, 0, 0, -1}));
 }
+
+TEST(EngineTest, RedWinsByFlagCapture) {
+    GameState state;
+    state.board = Board(get_config_for_game_type(GameType::Tiny)); // 4x4
+    state.current_turn = Player::Red;
+    
+    // Red piece
+    state.board.place_piece(0, 3, PieceType::Marshal, Player::Red);
+    // Blue pieces
+    state.board.place_piece(0, 0, PieceType::Flag, Player::Blue);
+    state.board.place_piece(1, 0, PieceType::Marshal, Player::Blue);
+
+    // Red moves towards flag
+    EXPECT_EQ(Engine::execute_move(state, {0, 3, 0, 2}), CombatResult::MovedToEmpty); // Red
+    EXPECT_EQ(Engine::execute_move(state, {1, 0, 1, 1}), CombatResult::MovedToEmpty); // Blue
+    EXPECT_EQ(Engine::execute_move(state, {0, 2, 0, 1}), CombatResult::MovedToEmpty); // Red
+    EXPECT_EQ(Engine::execute_move(state, {1, 1, 1, 0}), CombatResult::MovedToEmpty); // Blue
+    
+    // Red captures flag
+    EXPECT_EQ(Engine::execute_move(state, {0, 1, 0, 0}), CombatResult::FlagCaptured); // Red wins
+}
+
+TEST(EngineTest, BlueWinsByElimination) {
+    GameState state;
+    state.board = Board(get_config_for_game_type(GameType::Tiny)); // 4x4
+    state.current_turn = Player::Red;
+    
+    // Red pieces
+    state.board.place_piece(0, 3, PieceType::Lieutenant, Player::Red);
+    state.board.place_piece(1, 3, PieceType::Flag, Player::Red);
+    // Blue pieces
+    state.board.place_piece(0, 0, PieceType::Marshal, Player::Blue);
+    state.board.place_piece(3, 0, PieceType::Flag, Player::Blue);
+
+    // Red moves
+    EXPECT_EQ(Engine::execute_move(state, {0, 3, 0, 2}), CombatResult::MovedToEmpty); // Red
+    // Blue moves to hunt Red Lieutenant
+    EXPECT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatResult::MovedToEmpty); // Blue
+    EXPECT_EQ(Engine::execute_move(state, {0, 2, 1, 2}), CombatResult::MovedToEmpty); // Red
+    EXPECT_EQ(Engine::execute_move(state, {0, 1, 1, 1}), CombatResult::MovedToEmpty); // Blue
+    EXPECT_EQ(Engine::execute_move(state, {1, 2, 2, 2}), CombatResult::MovedToEmpty); // Red
+    EXPECT_EQ(Engine::execute_move(state, {1, 1, 2, 1}), CombatResult::MovedToEmpty); // Blue
+    EXPECT_EQ(Engine::execute_move(state, {2, 2, 2, 3}), CombatResult::MovedToEmpty); // Red
+    EXPECT_EQ(Engine::execute_move(state, {2, 1, 2, 2}), CombatResult::MovedToEmpty); // Blue
+    EXPECT_EQ(Engine::execute_move(state, {2, 3, 3, 3}), CombatResult::MovedToEmpty); // Red
+    
+    // Blue captures Red's only mobile piece
+    EXPECT_EQ(Engine::execute_move(state, {2, 2, 3, 2}), CombatResult::MovedToEmpty); // Blue
+    EXPECT_EQ(Engine::execute_move(state, {3, 3, 3, 2}), CombatResult::DefenderWins); // Red attacks Blue Marshal and dies
+    
+    // Now Red has no legal moves (only Flag left)
+    auto legal_moves = Engine::get_all_legal_moves(state, Player::Red);
+    EXPECT_TRUE(legal_moves.empty());
+}
+
+TEST(EngineTest, TrappedPlayerLoses) {
+    GameState state;
+    state.board = Board(get_config_for_game_type(GameType::Tiny)); // 4x4
+    state.current_turn = Player::Red;
+
+    // Red piece surrounded by Blue pieces and edge
+    state.board.place_piece(0, 0, PieceType::Marshal, Player::Red);
+    state.board.place_piece(0, 1, PieceType::Bomb, Player::Blue); // Blocking
+    state.board.place_piece(1, 0, PieceType::Bomb, Player::Blue); // Blocking
+    
+    // Trap with water
+    state.board.grid[state.board.index(0, 1)] = Piece{PieceType::Water, Player::None, true};
+    state.board.grid[state.board.index(1, 0)] = Piece{PieceType::Water, Player::None, true};
+    
+    auto legal_moves = Engine::get_all_legal_moves(state, Player::Red);
+    EXPECT_TRUE(legal_moves.empty());
+}

@@ -147,24 +147,25 @@ int main() {
     } else {
         // Initialize NeuralPolicy
         // We need to recreate the model architecture used during training.
-        int in_channels = get_encoding_channels(state.board.config); 
+        int in_channels = get_encoding_channels(state.board.config);
         int hidden_filters = 64;
-        int res_blocks = 5;
-        
-        auto torso = std::make_shared<networks::torsos::CNNTorsoImpl>(in_channels, hidden_filters, res_blocks);
-        int D = 4 * (std::max(state.board.get_width(), state.board.get_height()) - 1);
-        int board_size = state.board.get_width() * state.board.get_height();
-        
-        networks::StrategoNet model(torso, D, board_size);
-        
+
+        encoding::actions::ActionEncoder encoder(state.board.config);
+        int action_channels = encoder.get_action_channels();
+        int H = state.board.config.height;
+        int W = state.board.config.width;
+
+        auto torso = std::make_shared<networks::torsos::CNNTorsoImpl>(in_channels, hidden_filters, 0);
+        networks::StrategoNet model(torso, action_channels * H * W, H * W);
+
         try {
             torch::load(model, settings.model_path);
             blue_agent = std::make_unique<NeuralPolicy>(model, state.board.config);
         } catch (const std::exception& e) {
-            ui_state.status_msg = "Error loading model! Falling back to Random.";
-            blue_agent = std::make_unique<Random>();
-        }
-    }
+            endwin();
+            std::cerr << "Error loading model: " << e.what() << "\n";
+            return 1;
+        }    }
 
     GameRunner orch(state, std::move(red_agent), std::move(blue_agent));
 

@@ -24,6 +24,9 @@ public:
     torch::Tensor get_action_mask() const;
     stratego::Player get_current_player() const { return state.current_turn; }
 
+    const encoding::actions::ActionEncoder& get_action_encoder() const { return action_encoder; }
+    const stratego::BoardConfig& get_config() const { return config; }
+
 private:
     stratego::BoardConfig config;
     stratego::state::SetupType setup_type;
