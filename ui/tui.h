@@ -95,6 +95,12 @@ public:
         if (current_step > 0) current_step--;
         reset_render();
     }
+
+    void restart_with_error(const std::string& msg) {
+        show_error(msg);
+        current_step = 0;
+        reset_render();
+    }
 };
 
 } // namespace tui

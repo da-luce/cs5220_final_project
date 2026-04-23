@@ -34,19 +34,19 @@ make
 ### Run Tests
 
 ```shell
-./stratego/test_stratego
+./build/test
 ```
 
 ## Run Terminal Game
 
 ```shell
-./frontend/play
+./build/ui/play
 ```
 
 ## Training
 
 ```shell
-./rl/train --iters 50000 --out custom_best_model.pth
+./build/rl/train_stratego <game_type> <setup_type> <num_episodes>
 ```
 
 # TODO: Training on Perlmutter

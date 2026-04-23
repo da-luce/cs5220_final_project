@@ -5,6 +5,7 @@
 #include <string>
 #include <optional>
 #include <utility>
+#include <filesystem>
 
 namespace stratego {
 
@@ -87,10 +88,7 @@ std::optional<GameSettings> start_menu() {
         settings.setup_type = (layout == "Probabilistic (Dobby/Oewesok)") ? state::SetupType::Probabilistic : state::SetupType::Random;
 
         // 3. Select AI
-        std::vector<std::string> ai_options = {"Random AI"};
-        if (settings.game_type == GameType::Tiny) {
-            ai_options.push_back("Trained AI");
-        }
+        std::vector<std::string> ai_options = {"Random AI", "Trained AI"};
 
         std::string ai = form.select("Select AI Opponent:", ai_options);
         if (ai.empty()) continue;
@@ -99,8 +97,36 @@ std::optional<GameSettings> start_menu() {
 
         // 4. Model Path (If Trained AI)
         if (settings.ai_type == AIType::Trained) {
-            settings.model_path = form.text_input("Enter model path (.pth):");
-            if (settings.model_path.empty()) continue;
+            std::string variant_str = (settings.game_type == GameType::Classic) ? "classic" :
+                                      (settings.game_type == GameType::Barrage) ? "barrage" :
+                                      (settings.game_type == GameType::Quick) ? "quick" : "tiny";
+            std::string setup_str = (settings.setup_type == state::SetupType::Probabilistic) ? "probabilistic" :
+                                    (settings.setup_type == state::SetupType::Default) ? "default" : "random";
+            
+            BoardConfig config = get_config_for_game_type(settings.game_type);
+            std::string model_prefix = variant_str + "_" + setup_str;
+
+            std::vector<std::string> model_files;
+            if (std::filesystem::exists("models")) {
+                for (const auto& entry : std::filesystem::directory_iterator("models")) {
+                    if (entry.is_regular_file() && entry.path().extension() == ".pt") {
+                        std::string filename = entry.path().filename().string();
+                        if (filename == model_prefix + ".pt") {
+                            model_files.push_back(entry.path().string());
+                        }
+                    }
+                }
+            }
+
+            if (model_files.empty()) {
+                form.restart_with_error("No models found matching: " + model_prefix + ".pt\nTrain one with: ./build/rl/train_stratego " + variant_str + " " + setup_str + " <num_episodes>");
+                continue; // Restart loop
+            }
+
+            std::string selected_model = form.select("Select Model:", model_files);
+            if (selected_model.empty()) continue;
+            
+            settings.model_path = selected_model;
         }
 
         return settings;

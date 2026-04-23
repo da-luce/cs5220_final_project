@@ -9,6 +9,7 @@
 #include <memory>
 #include <algorithm>
 #include <chrono>
+#include <string>
 
 struct EvalResult {
     float win_rate;
@@ -19,6 +20,7 @@ EvalResult evaluate_vs_champion(
     networks::StrategoNet challenger,
     networks::StrategoNet champion,
     const stratego::BoardConfig& config,
+    stratego::state::SetupType setup_type,
     int num_games = 50
 ) {
     challenger->eval();
@@ -30,7 +32,7 @@ EvalResult evaluate_vs_champion(
     int draws = 0;
 
     for (int g = 0; g < num_games; ++g) {
-        StrategoEnvironment env(config, stratego::state::SetupType::Random, 60);
+        StrategoEnvironment env(config, setup_type, 60);
         bool challenger_is_red = (g % 2 == 0);
         bool done = false;
         torch::Tensor obs = env.reset();
@@ -84,11 +86,33 @@ EvalResult evaluate_vs_champion(
     return {(float)challenger_wins / num_games, (float)draws / num_games};
 }
 
-int main() {
+int main(int argc, char** argv) {
     auto start_time = std::chrono::high_resolution_clock::now();
 
-    stratego::BoardConfig config = stratego::get_config_for_game_type(stratego::GameType::Tiny);
-    auto env = std::make_unique<StrategoEnvironment>(config, stratego::state::SetupType::Random, 60);
+    std::string variant_str = "tiny";
+    std::string setup_str = "random";
+    int num_episodes = 20000;
+    if (argc >= 2) variant_str = argv[1];
+    if (argc >= 3) setup_str = argv[2];
+    if (argc >= 4) num_episodes = std::stoi(argv[3]);
+
+    stratego::GameType game_type;
+    if (variant_str == "classic") game_type = stratego::GameType::Classic;
+    else if (variant_str == "quick") game_type = stratego::GameType::Quick;
+    else if (variant_str == "barrage") game_type = stratego::GameType::Barrage;
+    else game_type = stratego::GameType::Tiny;
+
+    stratego::state::SetupType setup_type;
+    if (setup_str == "default") setup_type = stratego::state::SetupType::Default;
+    else if (setup_str == "probabilistic") setup_type = stratego::state::SetupType::Probabilistic;
+    else setup_type = stratego::state::SetupType::Random;
+
+    stratego::BoardConfig config = stratego::get_config_for_game_type(game_type);
+    
+    std::string model_name = variant_str + "_" + setup_str + ".pt";
+    std::string model_path = "models/" + model_name;
+
+    auto env = std::make_unique<StrategoEnvironment>(config, setup_type, 60);
 
     int obs_channels = get_encoding_channels(config);
     int action_channels = env->get_action_encoder().get_action_channels();
@@ -96,6 +120,7 @@ int main() {
     int W = config.width;
 
     std::cout << "Config: Obs Channels=" << obs_channels << " Action Channels=" << action_channels << " Dim=" << H << "x" << W << std::endl;
+    std::cout << "Target Path: " << model_path << std::endl;
 
     auto torso_challenger = std::make_shared<networks::torsos::CNNTorsoImpl>(obs_channels, 64, 0);
     networks::StrategoNet challenger(torso_challenger, action_channels * H * W, H * W);
@@ -119,14 +144,14 @@ int main() {
     PPOAgent agent(challenger, 1e-4, 0.99, 1, 0.2); 
     RolloutBuffer<torch::Tensor, int> buffer;
 
-    std::cout << "Starting Self-Play Training (Challenger vs Champion)..." << std::endl;
+    std::cout << "Starting Self-Play Training (Challenger vs Champion) for " << num_episodes << " episodes..." << std::endl;
 
     float total_reward = 0;
     int games_count = 0;
     int eval_freq = 500;
     float win_threshold = 0.55f;
 
-    for (int i = 1; i <= 20000; ++i) {
+    for (int i = 1; i <= num_episodes; ++i) {
         torch::Tensor obs = env->reset();
         bool done = false;
         std::vector<stratego::Player> move_owners;
@@ -189,7 +214,7 @@ int main() {
             auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
             
             std::cout << "\n--- Episode " << i << ": Evaluating Challenger vs Champion ---" << std::endl;
-            auto res = evaluate_vs_champion(challenger, champion, config, 100);
+            auto res = evaluate_vs_champion(challenger, champion, config, setup_type, 100);
             std::cout << "Challenger Win Rate: " << res.win_rate * 100 << "% | Draw Rate: " << res.draw_rate * 100 << "%" << std::endl;
             
             if (res.win_rate >= win_threshold) {
@@ -200,7 +225,7 @@ int main() {
                 for (size_t p_idx = 0; p_idx < params.size(); ++p_idx) {
                     champ_params[p_idx].copy_(params[p_idx]);
                 }
-                torch::save(challenger, "stratego_best_model.pt");
+                torch::save(challenger, model_path);
             } else {
                 std::cout << "Challenger failed to dethrone the Champion. Continuing training..." << std::endl;
             }
@@ -212,7 +237,7 @@ int main() {
         }
     }
 
-    torch::save(challenger, "stratego_model_final.pt");
-    std::cout << "Training complete. Final model saved." << std::endl;
+    torch::save(challenger, model_path);
+    std::cout << "Training complete. Final model saved to " << model_path << std::endl;
     return 0;
 }
