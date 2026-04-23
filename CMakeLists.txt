@@ -32,8 +32,10 @@ enable_testing()
 
 add_executable(unified_test
     # Feature Extraction implementation + test
-    features/features.cpp
-    features/test_features.cpp
+    encoding/board.cpp
+    encoding/actions.cpp
+    encoding/test_board.cpp
+    encoding/test_actions.cpp
     
     # Stratego Logic tests (files located in stratego/ folder)
     stratego/test_board.cpp
