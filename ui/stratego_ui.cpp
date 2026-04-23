@@ -77,15 +77,12 @@ std::optional<GameSettings> start_menu() {
                              (game_type == "Quick (8x8)")     ? GameType::Quick   : GameType::Tiny;
 
         // 2. Select Layout
-        std::vector<std::string> layouts = {"Random"};
-        if (settings.game_type == GameType::Classic) {
-            layouts = {"Probabilistic (Dobby/Oewesok)", "Random"};
-        }
+        std::vector<std::string> layouts = {"Probabilistic", "Random"};
         
         std::string layout = form.select("Select Starting Layout:", layouts);
         if (layout.empty()) continue;
 
-        settings.setup_type = (layout == "Probabilistic (Dobby/Oewesok)") ? state::SetupType::Probabilistic : state::SetupType::Random;
+        settings.setup_type = (layout == "Probabilistic") ? state::SetupType::Probabilistic : state::SetupType::Random;
 
         // 3. Select AI
         std::vector<std::string> ai_options = {"Random AI", "Trained AI"};
