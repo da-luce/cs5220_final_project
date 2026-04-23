@@ -1,21 +1,21 @@
 #pragma once
 #include "../stratego/state.h"
 #include "../stratego/engine.h"
-#include "../agents/player_agent.h"
+#include "../policy.h"
 #include <memory>
 
 namespace stratego {
 
-class Orchestrator {
+class GameRunner {
 private:
     GameState root_state;
-    std::unique_ptr<PlayerAgent> red_player;
-    std::unique_ptr<PlayerAgent> blue_player;
+    std::unique_ptr<Policy> red_player;
+    std::unique_ptr<Policy> blue_player;
 
 public:
-    Orchestrator(GameState initial_state, 
-                 std::unique_ptr<PlayerAgent> red, 
-                 std::unique_ptr<PlayerAgent> blue)
+    GameRunner(GameState initial_state, 
+                 std::unique_ptr<Policy> red, 
+                 std::unique_ptr<Policy> blue)
         : root_state(std::move(initial_state)), 
           red_player(std::move(red)), 
           blue_player(std::move(blue)) {}

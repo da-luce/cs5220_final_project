@@ -3,9 +3,9 @@
 
 namespace stratego {
 
-class PlayerAgent {
+class Policy {
 public:
-    virtual ~PlayerAgent() = default;
+    virtual ~Policy() = default;
 
     // Returns a Move. Bots calculate it; Humans return a move stored from a UI click.
     virtual Move get_move(const GameState& masked_state) = 0;
@@ -13,9 +13,3 @@ public:
 };
 
 }
-
-enum class AIType {
-    Random,
-    Trained,
-    Human
-};

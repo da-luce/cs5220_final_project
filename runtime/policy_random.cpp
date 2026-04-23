@@ -1,6 +1,6 @@
 namespace stratego {
 
-class RandomBot : public PlayerAgent {
+class Random : public Policy {
 public:
     Move get_move(const GameState& masked_state) override {
         auto legal_moves = Engine::get_all_legal_moves(masked_state, masked_state.current_turn);

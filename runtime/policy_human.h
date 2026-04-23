@@ -5,7 +5,7 @@
 
 namespace stratego {
 
-class HumanPlayer : public PlayerAgent {
+class Human : public Policy {
 private:
     std::optional<Move> next_move;
 
