@@ -25,6 +25,11 @@
 using BoardFeatures = std::vector<float>;
 
 /**
+ * Returns the number of channels in the board encoding for a given config.
+ */
+int get_encoding_channels(const stratego::BoardConfig& config);
+
+/**
  * Generates features from the perspective of perspective_player.
  * The board will be "normalized" (flipped) so that the perspective_player 
  * is always at the bottom of the H dimension.

@@ -1,4 +1,4 @@
-#include "encoding/actions.h"
+#include "actions.h"
 #include <cmath>
 
 namespace encoding {

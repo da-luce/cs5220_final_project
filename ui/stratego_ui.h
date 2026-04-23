@@ -1,11 +1,16 @@
 #pragma once
 #include "../stratego/state.h"
 #include "../stratego/engine.h"
-#include "../agents/player_agent.h"
+#include "../stratego/policy.h"
 #include <string>
 #include <optional>
 
 namespace stratego {
+
+enum class AIType {
+    Random,
+    Trained
+};
 
 struct UIGameState {
     int cursor_x = 0;

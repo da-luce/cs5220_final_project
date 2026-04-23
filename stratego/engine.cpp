@@ -49,7 +49,7 @@ bool Engine::is_legal_move(
     }
 
     // 5. Rule: Two-Squares Rule
-    if (history.size() >= 6) {
+    if (board.get_width() >= 5 && history.size() >= 6) {
         bool all_same = true;
         // Check our last 3 moves (which are at index -2, -4, -6 due to turn alternation)
         for (int i = 1; i <= 3; ++i) {

@@ -1,8 +1,12 @@
 #include "../stratego/state.h"
 #include "../stratego/engine.h"
-#include "../controller/orchestrator.cpp"
-#include "../agents/player_human.cpp"
-#include "../agents/player_random.cpp"
+#include "../runtime/game_runner.cpp"
+#include "../runtime/player_human.cpp"
+#include "../runtime/policy_random.cpp"
+#include "../rl/policy_neural.h"
+#include "../rl/networks/model.h"
+#include "../rl/networks/torsos/cnn.h"
+#include "../rl/encoding/board.h"
 
 #include <ncurses.h>
 #include <locale.h>
@@ -135,10 +139,34 @@ int main() {
     ui_state.ai_type = (settings.ai_type == AIType::Random) ? "Random AI" : "Trained AI";
     ui_state.model_path = settings.model_path;
 
-    std::unique_ptr<PlayerAgent> red_agent = std::make_unique<HumanPlayer>();
-    std::unique_ptr<PlayerAgent> blue_agent = std::make_unique<RandomBot>(); 
+    std::unique_ptr<Policy> red_agent = std::make_unique<Human>();
+    std::unique_ptr<Policy> blue_agent;
+    
+    if (settings.ai_type == AIType::Random) {
+        blue_agent = std::make_unique<Random>();
+    } else {
+        // Initialize NeuralPolicy
+        // We need to recreate the model architecture used during training.
+        int in_channels = get_encoding_channels(state.board.config); 
+        int hidden_filters = 64;
+        int res_blocks = 5;
+        
+        auto torso = std::make_shared<networks::torsos::CNNTorsoImpl>(in_channels, hidden_filters, res_blocks);
+        int D = 4 * (std::max(state.board.get_width(), state.board.get_height()) - 1);
+        int board_size = state.board.get_width() * state.board.get_height();
+        
+        networks::StrategoNet model(torso, D, board_size);
+        
+        try {
+            torch::load(model, settings.model_path);
+            blue_agent = std::make_unique<NeuralPolicy>(model, state.board.config);
+        } catch (const std::exception& e) {
+            ui_state.status_msg = "Error loading model! Falling back to Random.";
+            blue_agent = std::make_unique<Random>();
+        }
+    }
 
-    Orchestrator orch(state, std::move(red_agent), std::move(blue_agent));
+    GameRunner orch(state, std::move(red_agent), std::move(blue_agent));
 
     while (!ui_state.exit_game) {
         render_board(orch.get_state(), ui_state);
@@ -152,12 +180,12 @@ int main() {
             continue;
         }
 
-        PlayerAgent* active = orch.get_active_agent();
+        Policy* active = orch.get_active_agent();
 
         if (active->is_human()) {
             auto m_opt = process_human_input(orch.get_state(), ui_state);
             if (m_opt) {
-                static_cast<HumanPlayer*>(active)->set_next_move(*m_opt);
+                static_cast<Human*>(active)->set_next_move(*m_opt);
                 CombatResult res = orch.step();
                 ui_state.status_msg = "Move resolved.";
                 append_combat_msg(res, ui_state.status_msg, ui_state.game_over);

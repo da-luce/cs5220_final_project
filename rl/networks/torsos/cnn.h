@@ -1,9 +1,9 @@
 #pragma once
 
 #include <torch/torch.h>
-#include "base.h"
+#include "networks/torsos/base.h"
 
-namespace architectures {
+namespace networks {
 namespace torsos {
 
 // Residual Block
@@ -13,6 +13,7 @@ struct ResidualBlockImpl : torch::nn::Module {
     torch::nn::Conv2d conv2{nullptr};
     torch::nn::BatchNorm2d bn2{nullptr};
 
+    ResidualBlockImpl() = default;
     ResidualBlockImpl(int channels);
     torch::Tensor forward(torch::Tensor x);
 };
@@ -27,6 +28,7 @@ struct CNNTorsoImpl : TorsoBase {
     // in_channels = (2N + 2) for your Stratego encoding
     // num_filters = hidden dimension (e.g., 64, 128, 256)
     // num_blocks  = number of residual blocks
+    CNNTorsoImpl() = default;
     CNNTorsoImpl(int in_channels, int num_filters, int num_blocks);
 
     torch::Tensor forward(torch::Tensor x) override;
@@ -36,4 +38,4 @@ struct CNNTorsoImpl : TorsoBase {
 TORCH_MODULE(CNNTorso);
 
 } // namespace torsos
-} // namespace architectures
+} // namespace networks

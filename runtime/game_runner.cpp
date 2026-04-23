@@ -1,7 +1,7 @@
 #pragma once
 #include "../stratego/state.h"
 #include "../stratego/engine.h"
-#include "../policy.h"
+#include "../stratego/policy.h"
 #include <memory>
 
 namespace stratego {
@@ -22,7 +22,7 @@ public:
 
     CombatResult step() {
         Player current = root_state.current_turn;
-        PlayerAgent* active_agent = (current == Player::Red) ? red_player.get() : blue_player.get();
+        Policy* active_agent = (current == Player::Red) ? red_player.get() : blue_player.get();
 
         // 1. Prepare the view for the agent
         GameState view = state::get_masked_view(root_state, current);
@@ -35,7 +35,7 @@ public:
     }
     
     const GameState& get_state() const { return root_state; }
-    PlayerAgent* get_active_agent() const { return (root_state.current_turn == Player::Red) ? red_player.get() : blue_player.get(); }
+    Policy* get_active_agent() const { return (root_state.current_turn == Player::Red) ? red_player.get() : blue_player.get(); }
 };
 
 } // namespace stratego

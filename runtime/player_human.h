@@ -1,6 +1,6 @@
 #pragma once
 #include "../stratego/state.h"
-#include "player_agent.h"
+#include "../stratego/policy.h"
 #include <optional>
 
 namespace stratego {

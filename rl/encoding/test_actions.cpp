@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "encoding/actions.h"
+#include "actions.h"
 #include "stratego/board.h"
 #include "stratego/state.h"
 

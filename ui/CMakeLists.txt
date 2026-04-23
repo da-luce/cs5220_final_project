@@ -10,10 +10,14 @@ add_executable(play
     tui.cpp # Assumes a tui.cpp exists to implement tui.h
 )
 
-# The 'play' executable needs to find headers from the root 'agents' directory.
-# The 'stratego' headers are found by linking against the 'stratego_core' library.
-target_include_directories(play PRIVATE ${CMAKE_SOURCE_DIR}/agents)
+# The 'play' executable needs to find headers from the rl and runtime directories.
+target_include_directories(play PRIVATE ${CMAKE_SOURCE_DIR})
 
-# Link the executable against the core game logic library (stratego_core)
-# and the ncurses library (which is found in the root CMakeLists.txt).
-target_link_libraries(play PRIVATE stratego_core ${CURSES_LIBRARIES})
+# Link the executable against the core game logic library (stratego_core),
+# the RL library (rl_core), LibTorch, and the ncurses library.
+target_link_libraries(play PRIVATE 
+    stratego_core 
+    rl_core
+    "${TORCH_LIBRARIES}"
+    ${CURSES_LIBRARIES}
+)

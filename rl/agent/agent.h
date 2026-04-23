@@ -2,6 +2,7 @@
 // We didn't study PPO as much in class, so some of this is less clear to me
 
 #include <vector>
+#include <torch/torch.h>
 
 // PPO stores past states and actions, then re-evaluates them with the updated
 // policy to see how the model's behavior has changed. So, it is helpful to
@@ -25,7 +26,7 @@ public:
 
     // Used during the rollout phase (interacts with the Env)
     // Runs both actor and critic heads simultaneously for efficiency.
-    [[nodiscard]] virtual AgentOutput<ActionType> act(const ObsType& obs) = 0;
+    [[nodiscard]] virtual AgentOutput<ActionType> act(const ObsType& obs, const torch::Tensor& mask) = 0;
 
     // Trigger neural net update
     virtual void update_weights(RolloutBuffer<ObsType, ActionType>& buffer) = 0;

@@ -2,6 +2,10 @@
 #include <stdexcept>
 #include <algorithm>
 
+int get_encoding_channels(const stratego::BoardConfig& config) {
+    return (2 * (int)config.piece_counts.size()) + 2;
+}
+
 BoardFeatures get_board_encoding(const stratego::GameState& state, stratego::Player perspective_player) {
     const int w = state.board.get_width();
     const int h = state.board.get_height();
@@ -16,7 +20,7 @@ BoardFeatures get_board_encoding(const stratego::GameState& state, stratego::Pla
         piece_to_base_channel[static_cast<int>(ptype)] = num_playable++;
     }
 
-    const int total_channels = (2 * num_playable) + 2;
+    const int total_channels = get_encoding_channels(state.board.config);
     const int unrevealed_offset = num_playable * spatial_size;
     const int revealed_start_channel = num_playable + 1;
     const int obstacle_offset = (total_channels - 1) * spatial_size;

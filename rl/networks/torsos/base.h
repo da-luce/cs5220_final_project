@@ -1,4 +1,4 @@
-namespace architectures {
+namespace networks {
 namespace torsos {
 
 class TorsoBase : public torch::nn::Module {
@@ -13,4 +13,4 @@ public:
 };
 
 } // namespace torsos
-} // namespace architectures
+} // namespace networks

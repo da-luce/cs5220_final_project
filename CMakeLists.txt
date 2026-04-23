@@ -24,18 +24,18 @@ find_package(Curses REQUIRED)
 
 # --- Subdirectories ---
 add_subdirectory(stratego)
-# (frontend subdirectory likely contains its own executable, so we leave it)
-add_subdirectory(frontend)
+add_subdirectory(rl)
+add_subdirectory(ui)
 
 # --- The Unified Test Binary ---
 enable_testing()
 
 add_executable(unified_test
     # Feature Extraction implementation + test
-    encoding/board.cpp
-    encoding/actions.cpp
-    encoding/test_board.cpp
-    encoding/test_actions.cpp
+    rl/encoding/board.cpp
+    rl/encoding/actions.cpp
+    rl/encoding/test_board.cpp
+    rl/encoding/test_actions.cpp
     
     # Stratego Logic tests (files located in stratego/ folder)
     stratego/test_board.cpp
