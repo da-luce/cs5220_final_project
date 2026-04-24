@@ -1,10 +1,29 @@
-# CS 5220 SP2026 Final Project: Scaling Parallel Stratego Training
+# ⚔️ CS 5220 SP2026: Scaling Parallel Stratego Training
 
-**Cornell University** \
-**Authors:** [Abrar Amin](https://github.com/abrar-amin) & [Dalton Luce](https://github.com/da-luce)
+**Cornell University** - [CS 5220 SP 2026](https://www.cs.cornell.edu/courses/cs5220/2026sp/)\
+**Authors** - [Abrar Amin](https://github.com/abrar-amin) & [Dalton Luce](https://github.com/da-luce)
 
-- [CS 5220 SP 2026](https://www.cs.cornell.edu/courses/cs5220/2026sp/)
-- [CS 5782 SP2026](https://www.cs.cornell.edu/courses/cs4782/2026sp/): helpful RL background resources
+The classic strategy game [Stratego](https://en.wikipedia.org/wiki/Stratego), in your terminal.
+
+<div style="text-align: center; font-family: monospace;">
+<pre>
+<code>
+╭────────────────────────╮
+│    0 1 2 3 4 5 6 7 8 9 │
+│ 0  <span style="color:#aaa">? ? ? ? ? ? ? ? ? ?</span> │
+│ 1  <span style="color:#aaa">? ? ? ? ? ? ? ? ? ?</span> │
+│ 2  <span style="color:#aaa">? ? ? ? ? ? ? ? ? ?</span> │
+│ 3  <span style="color:#aaa">? ? ? ? ? ? ? ? ? ?</span> │
+│ 4  <span style="color:#666">· ·</span> <span style="color:#4FC3F7">≋ ≋</span> <span style="color:#666">· ·</span> <span style="color:#4FC3F7">≋ ≋</span> <span style="color:#666">· ·</span> │
+│ 5  <span style="color:#666">· ·</span> <span style="color:#4FC3F7">≋ ≋</span> <span style="color:#666">· ·</span> <span style="color:#4FC3F7">≋ ≋</span> <span style="color:#666">· ·</span> │
+│ 6  <span style="color:#E57373">B</span> <span style="color:#F06292">3 2 2 5 2 6 7 5</span> <span style="color:#E57373">B</span> │
+│ 7  <span style="color:#F06292">3 8 2 6 6</span> <span style="color:#E57373">B</span> <span style="color:#F06292">4 6 4</span> <span style="color:#FFD54F">★</span> │
+│ 8  <span style="color:#F06292">8 9</span> <span style="color:#E57373">B</span> <span style="color:#F06292">2 2 3 2 5 7</span> <span style="color:#81C784">⚑</span> │
+│ 9  <span style="color:#F06292">3</span> <span style="color:#BA68C8">S</span> <span style="color:#E57373">B</span> <span style="color:#F06292">3 7 5 2 4</span> <span style="color:#E57373">B</span> <span style="color:#F06292">4</span> │
+╰────────────────────────╯
+</code>
+</pre>
+</div>
 
 ## Overview
 
@@ -40,14 +59,18 @@ make
 ## Run Terminal Game
 
 ```shell
-./build/ui/play
+./ui/play
 ```
 
 ## Training
 
 ```shell
-./build/rl/train_stratego <game_type> <setup_type> <num_episodes>
+./rl/train_stratego <game_type> <setup_type> <num_episodes>
 ```
+
+## Resources
+
+- [CS 5782 SP2026](https://www.cs.cornell.edu/courses/cs4782/2026sp/): helpful RL background resources
 
 # TODO: Training on Perlmutter
 
@@ -72,33 +95,6 @@ As opposed to directly following established RL frameworks like OpenSpiel, we op
 1. **Parallel Rollouts:** Multiple workers independently simulate games against a uniformly sampled pool of past checkpoints.
 2. **Synchronization:** Gradients and model parameters are synchronized across GPUs using NCCL. We are evaluating both synchronous (stable but bottlenecked) and asynchronous (higher throughput but noisier) update strategies.
 3. **Optimization:** The PPO clipped surrogate loss is calculated, and weights are updated via mini-batches.
-
-```text
-final_project/
-├── CMakeLists.txt
-├── README.md
-├── main.cpp                  # Only parses args and launches train/eval modes
-│
-├── stratego/                 # PURE GAME LOGIC (No RL code here)
-│   ├── stratego.h            # Board, Piece, Move definitions
-│   └── stratego.cpp          # Move execution, combat resolution
-│
-├── environment/              # GYM-STYLE WRAPPERS
-│   ├── environment.h         # Base Environment interface
-│   └── stratego_env.cpp      # StrategoEnvironment class (generates onbs)
-│
-├── rl/                       # PPO & DISTRIBUTED TRAINING CODE
-│   ├── agent.h               # Agent interface and struct definitions
-│   ├── rollout_buffer.cpp    # Trajectory storage and GAE math
-│   ├── ppo_trainer.cpp       # Training PPO
-│   └── nccl_utils.cpp        # (Future) Perlmutter multi-GPU sync helpers
-│
-├── frontend/                 # VISUALIZATION & PLAY
-│   └── play_ascii.cpp        # Your ncurses terminal UI
-│
-└── experiments/              # SCRIPTS & PROTOTYPES
-    └── play.py               # Tkinter Python UI
-```
 
 ## Random Notes and Observations
 
