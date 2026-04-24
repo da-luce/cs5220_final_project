@@ -131,7 +131,8 @@ void generate_probabilistic_setup(Board& board, Player player) {
     try {
         // Attempt to load. In a production engine, this should be cached in memory 
         // rather than hitting the disk on every single setup.
-        PieceDistribution raw_dist = load_4x10_distributions_from_json("data/setup_distributions.json");
+        std::string json_path = std::string(PROJECT_ROOT_DIR) + "/data/piece_dist.json";
+        PieceDistribution raw_dist = load_4x10_distributions_from_json(json_path);
         dist = generate_distribution(raw_dist, rows, cols);
     } catch (const std::exception& e) {
         // If file is missing, 'dist' remains empty. 

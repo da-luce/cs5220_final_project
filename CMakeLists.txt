@@ -19,7 +19,7 @@ FetchContent_MakeAvailable(googletest)
 # LibTorch
 find_package(Torch REQUIRED)
 
-
+add_definitions(-DPROJECT_ROOT_DIR=\"${CMAKE_SOURCE_DIR}\")
 
 # --- Subdirectories ---
 add_subdirectory(stratego)

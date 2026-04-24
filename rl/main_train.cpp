@@ -110,7 +110,7 @@ int main(int argc, char** argv) {
     stratego::BoardConfig config = stratego::get_config_for_game_type(game_type);
     
     std::string model_name = variant_str + "_" + setup_str + ".pt";
-    std::string model_path = "models/" + model_name;
+    std::string model_path = std::string(PROJECT_ROOT_DIR) + "/models/" + model_name;
 
     auto env = std::make_unique<StrategoEnvironment>(config, setup_type, 60);
 

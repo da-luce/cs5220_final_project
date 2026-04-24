@@ -141,13 +141,27 @@ std::optional<GameSettings> start_menu() {
         }
 
         if (step >= 3 && game_type_entries[game_type_selected] != "Load Game" && ai_entries[ai_selected] == "Trained AI") {
-            lines.push_back(format_question("Select Model", step == 3, model_entries.empty() ? "" : std::filesystem::path(model_entries[model_selected]).filename().string()));
+            lines.push_back(format_question("Select Model", step == 3, model_entries.empty() ? "" : model_entries[model_selected]));
+            
+            std::string variant_cmd = (settings.game_type == GameType::Classic) ? "classic" :
+                                      (settings.game_type == GameType::Barrage) ? "barrage" :
+                                      (settings.game_type == GameType::Quick) ? "quick" : "tiny";
+            std::string setup_cmd = (settings.setup_type == state::SetupType::Probabilistic) ? "probabilistic" :
+                                    (settings.setup_type == state::SetupType::Default) ? "default" : "random";
+            std::string train_cmd = "./build/rl/train " + variant_cmd + " " + setup_cmd + " 20000";
+
             if (step == 3) {
                 if (model_entries.empty()) {
                     lines.push_back(text("    No models found!") | color(Color::Red));
                     lines.push_back(text("    " + error_msg) | color(Color::Red));
+                    lines.push_back(text(""));
+                    lines.push_back(text("    To train a model for this config, run:") | dim);
+                    lines.push_back(text("    " + train_cmd) | color(Color::Yellow));
                 } else {
                     lines.push_back(model_menu->Render());
+                    lines.push_back(text(""));
+                    lines.push_back(text("    To train a new model, run:") | dim);
+                    lines.push_back(text("    " + train_cmd) | color(Color::Yellow));
                 }
             }
         }
@@ -226,12 +240,13 @@ std::optional<GameSettings> start_menu() {
                                             (settings.setup_type == state::SetupType::Default) ? "default" : "random";
                     std::string model_prefix = variant_str + "_" + setup_str;
                     
-                    if (std::filesystem::exists("models")) {
-                        for (const auto& entry : std::filesystem::directory_iterator("models")) {
+                    std::filesystem::path models_path = std::filesystem::path(PROJECT_ROOT_DIR) / "models";
+                    if (std::filesystem::exists(models_path)) {
+                        for (const auto& entry : std::filesystem::directory_iterator(models_path)) {
                             if (entry.is_regular_file() && entry.path().extension() == ".pt") {
                                 std::string filename = entry.path().filename().string();
                                 if (filename == model_prefix + ".pt") {
-                                    model_entries.push_back(entry.path().string());
+                                    model_entries.push_back(filename);
                                 }
                             }
                         }
@@ -248,7 +263,8 @@ std::optional<GameSettings> start_menu() {
             }
             if (step == 3) {
                 if (!model_entries.empty()) {
-                    settings.model_path = model_entries[model_selected];
+                    std::filesystem::path full_path = std::filesystem::path(PROJECT_ROOT_DIR) / "models" / model_entries[model_selected];
+                    settings.model_path = full_path.string();
                     finished = true;
                     screen.Exit();
                 } else {
