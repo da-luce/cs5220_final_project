@@ -1,30 +1,31 @@
 #include "stratego_ui.h"
-#include "tui.h"
-#include <ncurses.h>
 #include <vector>
 #include <string>
 #include <optional>
 #include <utility>
 #include <filesystem>
+#include <ftxui/component/component.hpp>
+#include <ftxui/component/screen_interactive.hpp>
+#include <ftxui/dom/elements.hpp>
 
 namespace stratego {
 
 const char* piece_to_str(PieceType type) {
     switch (type) {
-        case PieceType::Spy: return "S ";
-        case PieceType::Scout: return "2 ";
-        case PieceType::Miner: return "3 ";
-        case PieceType::Sergeant: return "4 ";
-        case PieceType::Lieutenant: return "5 ";
-        case PieceType::Captain: return "6 ";
-        case PieceType::Major: return "7 ";
-        case PieceType::Colonel: return "8 ";
-        case PieceType::General: return "9 ";
-        case PieceType::Marshal: return "★ "; // Star for Marshal
-        case PieceType::Bomb: return "B ";
-        case PieceType::Flag: return "⚑ ";    // Unicode Flag
+        case PieceType::Spy: return "S";
+        case PieceType::Scout: return "2";
+        case PieceType::Miner: return "3";
+        case PieceType::Sergeant: return "4";
+        case PieceType::Lieutenant: return "5";
+        case PieceType::Captain: return "6";
+        case PieceType::Major: return "7";
+        case PieceType::Colonel: return "8";
+        case PieceType::General: return "9";
+        case PieceType::Marshal: return "★"; // Star for Marshal
+        case PieceType::Bomb: return "B";
+        case PieceType::Flag: return "⚑";    // Unicode Flag
         case PieceType::Water: return "≈≈";   // Water Waves
-        default: return "· ";
+        default: return "·";
     }
 }
 
@@ -47,111 +48,251 @@ const char* piece_name(PieceType type) {
 }
 
 std::optional<GameSettings> start_menu() {
-    tui::Form form("=== STRATEGO SETUP ===");
+    using namespace ftxui;
+    auto screen = ScreenInteractive::Fullscreen();
+    GameSettings settings;
+    bool quit = false;
+    bool finished = false;
 
-    while (form.running()) {
-        GameSettings settings;
+    int step = 0; // 0: Game Type, 1: Layout, 2: AI, 3: Model, 4: Done
+    int tab_index = 0; // 0: game_type, 1: load_input, 2: layout, 3: ai, 4: model
+    std::string error_msg = "";
 
-        // 1. Select Game Type or Load
-        std::string game_type = form.select("Select Game Type:", {
-            "Classic (10x10)", "Barrage (10x10)", "Quick (8x8)", "Tiny (4x4)", "Load Game"
-        });
-        if (game_type.empty()) continue;
+    MenuOption option;
+    option.entries_option.transform = [](const EntryState& state) {
+        Element e = text(state.label);
+        if (state.active) {
+            return hbox({text("  > ") | color(Color::Cyan), e | color(Color::Cyan)});
+        }
+        return hbox({text("    "), e});
+    };
 
-        // --- LOAD GAME PATH ---
-        if (game_type == "Load Game") {
-            std::string filename = form.text_input("Enter filename:");
-            if (filename.empty()) continue;
-            
-            settings.new_game = false;
-            settings.load_filename = filename;
-            
-            return settings;
-        } 
-        
-        // --- NEW GAME PATH ---
-        settings.new_game = true;
-        
-        settings.game_type = (game_type == "Classic (10x10)") ? GameType::Classic : 
-                             (game_type == "Barrage (10x10)") ? GameType::Barrage :
-                             (game_type == "Quick (8x8)")     ? GameType::Quick   : GameType::Tiny;
+    // Game Type
+    int game_type_selected = 0;
+    std::vector<std::string> game_type_entries = {
+        "Classic (10x10)", "Barrage (10x10)", "Quick (8x8)", "Tiny (4x4)", "Load Game"
+    };
+    auto game_type_menu = Menu(&game_type_entries, &game_type_selected, option);
 
-        // 2. Select Layout
-        std::vector<std::string> layouts = {"Probabilistic", "Random"};
-        
-        std::string layout = form.select("Select Starting Layout:", layouts);
-        if (layout.empty()) continue;
+    // Layout
+    int layout_selected = 0;
+    std::vector<std::string> layout_entries = {"Probabilistic", "Random"};
+    auto layout_menu = Menu(&layout_entries, &layout_selected, option);
 
-        settings.setup_type = (layout == "Probabilistic") ? state::SetupType::Probabilistic : state::SetupType::Random;
+    // AI Type
+    int ai_selected = 0;
+    std::vector<std::string> ai_entries = {"Random AI", "Trained AI"};
+    auto ai_menu = Menu(&ai_entries, &ai_selected, option);
 
-        // 3. Select AI
-        std::vector<std::string> ai_options = {"Random AI", "Trained AI"};
+    // Load filename
+    std::string load_filename = "";
+    auto load_input = Input(&load_filename, "");
 
-        std::string ai = form.select("Select AI Opponent:", ai_options);
-        if (ai.empty()) continue;
-        
-        settings.ai_type = (ai == "Trained AI") ? AIType::Trained : AIType::Random;
+    // Model selection
+    int model_selected = 0;
+    std::vector<std::string> model_entries;
+    auto model_menu = Menu(&model_entries, &model_selected, option);
 
-        // 4. Model Path (If Trained AI)
-        if (settings.ai_type == AIType::Trained) {
-            std::string variant_str = (settings.game_type == GameType::Classic) ? "classic" :
-                                      (settings.game_type == GameType::Barrage) ? "barrage" :
-                                      (settings.game_type == GameType::Quick) ? "quick" : "tiny";
-            std::string setup_str = (settings.setup_type == state::SetupType::Probabilistic) ? "probabilistic" :
-                                    (settings.setup_type == state::SetupType::Default) ? "default" : "random";
-            
-            BoardConfig config = get_config_for_game_type(settings.game_type);
-            std::string model_prefix = variant_str + "_" + setup_str;
+    auto container = Container::Tab({
+        game_type_menu,
+        load_input,
+        layout_menu,
+        ai_menu,
+        model_menu
+    }, &tab_index);
 
-            std::vector<std::string> model_files;
-            if (std::filesystem::exists("models")) {
-                for (const auto& entry : std::filesystem::directory_iterator("models")) {
-                    if (entry.is_regular_file() && entry.path().extension() == ".pt") {
-                        std::string filename = entry.path().filename().string();
-                        if (filename == model_prefix + ".pt") {
-                            model_files.push_back(entry.path().string());
-                        }
-                    }
-                }
+    auto main_renderer = Renderer(container, [&] {
+        Elements lines;
+
+        auto format_question = [&](const std::string& q, bool is_active, const std::string& answer = "") {
+            if (is_active) {
+                return hbox({text("? ") | color(Color::Cyan) | bold, text(q) | bold});
+            } else {
+                return hbox({
+                    text("✔ ") | color(Color::Green) | bold,
+                    text(q) | bold,
+                    text(" … ") | dim,
+                    filler(),
+                    text(answer) | color(Color::Cyan)
+                });
             }
+        };
 
-            if (model_files.empty()) {
-                form.restart_with_error("No models found matching: " + model_prefix + ".pt\nTrain one with: ./build/rl/train_stratego " + variant_str + " " + setup_str + " <num_episodes>");
-                continue; // Restart loop
-            }
+        lines.push_back(text(""));
 
-            std::string selected_model = form.select("Select Model:", model_files);
-            if (selected_model.empty()) continue;
-            
-            settings.model_path = selected_model;
+        if (step >= 0) {
+            lines.push_back(format_question("Which Game Type would you like to play?", step == 0, game_type_entries[game_type_selected]));
+            if (step == 0) lines.push_back(game_type_menu->Render());
         }
 
-        return settings;
-    }
-    
-    // Returns empty if the user quit the menu (e.g., pressed ESC)
-    return std::nullopt; 
+        if (step >= 1 && game_type_entries[game_type_selected] == "Load Game") {
+            lines.push_back(format_question("Enter filename", step == 1, load_filename));
+            if (step == 1) lines.push_back(hbox({text("  > ") | color(Color::Cyan), load_input->Render() | color(Color::Cyan)}));
+        }
+
+        if (step >= 1 && game_type_entries[game_type_selected] != "Load Game") {
+            lines.push_back(format_question("Select Starting Layout", step == 1, layout_entries[layout_selected]));
+            if (step == 1) lines.push_back(layout_menu->Render());
+        }
+
+        if (step >= 2 && game_type_entries[game_type_selected] != "Load Game") {
+            lines.push_back(format_question("Select AI Opponent", step == 2, ai_entries[ai_selected]));
+            if (step == 2) lines.push_back(ai_menu->Render());
+        }
+
+        if (step >= 3 && game_type_entries[game_type_selected] != "Load Game" && ai_entries[ai_selected] == "Trained AI") {
+            lines.push_back(format_question("Select Model", step == 3, model_entries.empty() ? "" : std::filesystem::path(model_entries[model_selected]).filename().string()));
+            if (step == 3) {
+                if (model_entries.empty()) {
+                    lines.push_back(text("    No models found!") | color(Color::Red));
+                    lines.push_back(text("    " + error_msg) | color(Color::Red));
+                } else {
+                    lines.push_back(model_menu->Render());
+                }
+            }
+        }
+
+        lines.push_back(text(""));
+        lines.push_back(text("  Q to quit • ESC to go back") | dim);
+
+        return vbox(lines) | size(WIDTH, EQUAL, 65);
+    });
+
+    auto catch_events = CatchEvent(main_renderer, [&](Event event) {
+        if (event == Event::Character('q') || event == Event::Character('Q')) {
+            quit = true;
+            screen.Exit();
+            return true;
+        }
+        if (event == Event::Escape) {
+            if (step > 0) {
+                step--;
+                if (step == 0) tab_index = 0;
+                else if (step == 1) {
+                    if (game_type_entries[game_type_selected] == "Load Game") tab_index = 1;
+                    else tab_index = 2;
+                }
+                else if (step == 2) tab_index = 3;
+                return true;
+            } else {
+                quit = true;
+                screen.Exit();
+                return true;
+            }
+        }
+        if (event == Event::Return) {
+            if (step == 0) {
+                if (game_type_entries[game_type_selected] == "Load Game") {
+                    step = 1;
+                    tab_index = 1;
+                } else {
+                    settings.new_game = true;
+                    settings.game_type = (game_type_selected == 0) ? GameType::Classic :
+                                         (game_type_selected == 1) ? GameType::Barrage :
+                                         (game_type_selected == 2) ? GameType::Quick : GameType::Tiny;
+                    step = 1;
+                    tab_index = 2;
+                }
+                return true;
+            }
+            if (step == 1) {
+                if (game_type_entries[game_type_selected] == "Load Game") {
+                    if (!load_filename.empty()) {
+                        settings.new_game = false;
+                        settings.load_filename = load_filename;
+                        finished = true;
+                        screen.Exit();
+                    }
+                    return true;
+                } else {
+                    settings.setup_type = (layout_selected == 0) ? state::SetupType::Probabilistic : state::SetupType::Random;
+                    step = 2;
+                    tab_index = 3;
+                    return true;
+                }
+            }
+            if (step == 2) {
+                settings.ai_type = (ai_selected == 1) ? AIType::Trained : AIType::Random;
+                if (settings.ai_type == AIType::Random) {
+                    finished = true;
+                    screen.Exit();
+                } else {
+                    // Populate models
+                    model_entries.clear();
+                    std::string variant_str = (settings.game_type == GameType::Classic) ? "classic" :
+                                              (settings.game_type == GameType::Barrage) ? "barrage" :
+                                              (settings.game_type == GameType::Quick) ? "quick" : "tiny";
+                    std::string setup_str = (settings.setup_type == state::SetupType::Probabilistic) ? "probabilistic" :
+                                            (settings.setup_type == state::SetupType::Default) ? "default" : "random";
+                    std::string model_prefix = variant_str + "_" + setup_str;
+                    
+                    if (std::filesystem::exists("models")) {
+                        for (const auto& entry : std::filesystem::directory_iterator("models")) {
+                            if (entry.is_regular_file() && entry.path().extension() == ".pt") {
+                                std::string filename = entry.path().filename().string();
+                                if (filename == model_prefix + ".pt") {
+                                    model_entries.push_back(entry.path().string());
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (model_entries.empty()) {
+                        error_msg = "No models found matching: " + model_prefix + ".pt";
+                    }
+                    
+                    step = 3;
+                    tab_index = 4;
+                }
+                return true;
+            }
+            if (step == 3) {
+                if (!model_entries.empty()) {
+                    settings.model_path = model_entries[model_selected];
+                    finished = true;
+                    screen.Exit();
+                } else {
+                    step = 0; // Reset or back
+                    tab_index = 0;
+                }
+                return true;
+            }
+        }
+        return false;
+    });
+
+    screen.Loop(catch_events);
+
+    if (quit || !finished) return std::nullopt;
+    return settings;
 }
 
-void render_board(const GameState& game_state, const UIGameState& state) {
-    erase(); // Use erase() instead of clear() to avoid flickering during 100ms redraws
-    mvprintw(0, 0, "=== STRATEGO ===");
+ftxui::Element render_board(const GameState& game_state, const UIGameState& state) {
+    using namespace ftxui;
     
     const Board& board = game_state.board;
+    int w = board.get_width();
+    int h = board.get_height();
+
     std::vector<Move> active_legal_moves;
     if (state.selected_x != -1 && state.selected_y != -1) {
         active_legal_moves = Engine::get_legal_moves_for_piece(game_state, state.selected_x, state.selected_y);
     }
-    
-    int w = board.get_width();
-    int h = board.get_height();
 
-    mvprintw(1, 3, "┌");
-    for (int x = 0; x < w; ++x) printw("───");
-    printw("┐");
+    Elements grid_rows;
+    
+    // Header
+    Elements header_row;
+    header_row.push_back(text("  ")); // offset for y labels
+    for (int x = 0; x < w; ++x) {
+        header_row.push_back(text(std::to_string(x)) | size(WIDTH, EQUAL, 3) | center);
+    }
+    grid_rows.push_back(hbox(header_row));
 
     for (int y = 0; y < h; ++y) {
-        mvprintw(2 + y, 0, " %d │", y);
+        Elements row_elements;
+        row_elements.push_back(text(std::to_string(y) + " "));
+
         for (int x = 0; x < w; ++x) {
             Piece p = board.get_piece(x, y);
             bool is_cursor = (x == state.cursor_x && y == state.cursor_y) && !state.game_over;
@@ -167,82 +308,86 @@ void render_board(const GameState& game_state, const UIGameState& state) {
                 }
             }
 
-            int color_pair = 0;
             bool is_confrontation_target = (state.in_confrontation && x == state.pending_move.end_x && y == state.pending_move.end_y);
             bool is_confrontation_source = (state.in_confrontation && x == state.pending_move.start_x && y == state.pending_move.start_y);
 
-            if (is_selected) color_pair = 6;
-            else if (is_cursor) color_pair = 5;
-            else if (is_valid_attack) color_pair = 9;
-            else if (is_valid_empty) color_pair = 8;
-            else if (is_confrontation_source) color_pair = 0;
-            else if (is_confrontation_target) color_pair = 0;
-            else if (p.is_obstacle()) color_pair = 4;
-            else if (!p.is_empty()) {
-                if (p.owner == Player::Red) color_pair = 1;
-                else color_pair = (state.casual_mode && p.revealed) ? 2 : 3;
-                if (state.game_over && p.owner == Player::Blue) color_pair = 2;
-            }
-
-            if (color_pair) attron(COLOR_PAIR(color_pair));
+            Element cell;
 
             if (is_confrontation_source) {
-                printw("·  ");
+                cell = text("·");
             } else if (is_confrontation_target) {
                 std::string a_str = piece_to_str(state.pending_attacker_type);
-                if (!a_str.empty() && a_str.back() == ' ') a_str.pop_back();
                 std::string d_str = piece_to_str(state.pending_defender_type);
-                if (!d_str.empty() && d_str.back() == ' ') d_str.pop_back();
-
+                
                 Player current_player = game_state.current_turn;
-                int attacker_color = (current_player == Player::Red) ? 1 : 2;
-                int defender_color = (current_player == Player::Red) ? 2 : 1;
+                Color attacker_color = (current_player == Player::Red) ? Color::Red : Color::Blue;
+                Color defender_color = (current_player == Player::Red) ? Color::Blue : Color::Red;
 
-                if (color_pair) attroff(COLOR_PAIR(color_pair));
-                attron(COLOR_PAIR(attacker_color));
-                printw("%s", a_str.c_str());
-                attroff(COLOR_PAIR(attacker_color));
-                attron(COLOR_PAIR(defender_color));
-                printw("%s", d_str.c_str());
-                attroff(COLOR_PAIR(defender_color));
-                if (color_pair) attron(COLOR_PAIR(color_pair));
-                printw(" ");
+                cell = hbox(
+                    text(a_str) | color(attacker_color),
+                    text(d_str) | color(defender_color)
+                );
             }
-            else if (p.is_obstacle()) printw("≈≈ ");
-            else if (p.is_empty()) printw("·  ");
-            else if (p.owner == Player::Red) printw("%s ", piece_to_str(p.type));
+            else if (p.is_obstacle()) cell = text("≈≈") | color(Color::Cyan);
+            else if (p.is_empty()) cell = text("·");
+            else if (p.owner == Player::Red) cell = text(std::string(piece_to_str(p.type))) | color(Color::Red);
             else {
-                if (state.game_over || (state.casual_mode && p.revealed)) printw("%s ", piece_to_str(p.type));
-                else printw("?  ");
+                if (state.game_over || (state.casual_mode && p.revealed)) {
+                    cell = text(std::string(piece_to_str(p.type))) | color(Color::Blue);
+                } else {
+                    cell = text("?") | color(Color::Magenta);
+                }
             }
 
-            if (color_pair) attroff(COLOR_PAIR(color_pair));
+            // Apply background colors for cursor/selection
+            if (is_selected) cell = cell | bgcolor(Color::Yellow) | color(Color::Black);
+            else if (is_cursor) cell = cell | bgcolor(Color::White) | color(Color::Black);
+            else if (is_valid_attack) cell = cell | bgcolor(Color::Red) | color(Color::White);
+            else if (is_valid_empty) cell = cell | bgcolor(Color::Green) | color(Color::Black);
+
+            row_elements.push_back(cell | size(WIDTH, EQUAL, 3) | center);
         }
-        printw("│");
-    }
-    mvprintw(2 + h, 3, "└");
-    for (int x = 0; x < w; ++x) printw("───");
-    printw("┘");
-
-    mvprintw(3 + h, 4, "");
-    for (int x = 0; x < w; ++x) {
-        if (x == 0) printw(" %d", x);
-        else printw("  %d", x);
+        grid_rows.push_back(hbox(row_elements));
     }
 
-    attron(COLOR_PAIR(7));
-    move(15, 0); clrtoeol();
-    mvprintw(15, 0, "%s", state.status_msg.c_str());
-    move(16, 0); clrtoeol();
-    if (state.game_over) mvprintw(16, 0, "Game Over. Press 'q' to exit.");
-    else mvprintw(16, 0, "Select a piece and move it to a highlighted square.");
-    attroff(COLOR_PAIR(7));
+    auto board_view = window(text(" Board "), vbox(grid_rows));
 
-    mvprintw(18, 4, "       "); if (state.last_ch == KEY_UP || state.last_ch == 'k') attron(A_REVERSE); printw("↑/k"); if (state.last_ch == KEY_UP || state.last_ch == 'k') attroff(A_REVERSE);
-    move(19, 4); printw(" "); if (state.last_ch == KEY_LEFT || state.last_ch == 'h') attron(A_REVERSE); printw("←/h"); if (state.last_ch == KEY_LEFT || state.last_ch == 'h') attroff(A_REVERSE); printw("   ");
-    if (state.last_ch == KEY_DOWN || state.last_ch == 'j') attron(A_REVERSE); printw("↓/j"); if (state.last_ch == KEY_DOWN || state.last_ch == 'j') attroff(A_REVERSE); printw("   ");
-    if (state.last_ch == KEY_RIGHT || state.last_ch == 'l') attron(A_REVERSE); printw("→/l"); if (state.last_ch == KEY_RIGHT || state.last_ch == 'l') attroff(A_REVERSE);
-    mvprintw(18, 25, "[ENTER] Select / Move"); mvprintw(19, 25, "[ESC]   Deselect"); mvprintw(20, 25, "[S]     Save Game"); mvprintw(21, 25, "[C]     Toggle Casual"); mvprintw(22, 25, "[R]     Resign"); mvprintw(23, 25, "[Q]     Quit"); refresh();
+    auto key_up = text(" ↑/k ");
+    if (state.last_input == "UP") key_up = key_up | inverted;
+    auto key_down = text(" ↓/j ");
+    if (state.last_input == "DOWN") key_down = key_down | inverted;
+    auto key_left = text(" ←/h ");
+    if (state.last_input == "LEFT") key_left = key_left | inverted;
+    auto key_right = text(" →/l ");
+    if (state.last_input == "RIGHT") key_right = key_right | inverted;
+
+    auto controls_view = hbox({
+        vbox({
+            hbox({text("     "), key_up, text("     ")}),
+            hbox({key_left, key_down, key_right})
+        }),
+        filler() | size(WIDTH, EQUAL, 4),
+        vbox({
+            text("[ENTER] Select / Move"),
+            text("[ESC]   Deselect"),
+            text("[C]     Toggle Casual"),
+            text("[R]     Resign"),
+            text("[Q]     Quit")
+        })
+    });
+
+    auto status_view = vbox({
+        text(state.status_msg) | color(Color::Green),
+        state.game_over ? text("Game Over. Press 'q' to exit.") : text("Select a piece and move it to a highlighted square."),
+        separator(),
+        controls_view
+    });
+
+    return hbox({
+        vbox({board_view, filler()}),
+        text("  "), // small spacing
+        vbox({window(text(" Info "), status_view) | size(WIDTH, EQUAL, 60), filler()})
+    });
 }
 
 } // namespace stratego

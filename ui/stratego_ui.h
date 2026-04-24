@@ -4,6 +4,8 @@
 #include "../stratego/policy.h"
 #include <string>
 #include <optional>
+#include <ftxui/component/component.hpp>
+#include <ftxui/dom/elements.hpp>
 
 namespace stratego {
 
@@ -24,7 +26,7 @@ struct UIGameState {
     Move pending_move{};
     PieceType pending_attacker_type{PieceType::Empty};
     PieceType pending_defender_type{PieceType::Empty};
-    int last_ch = -1;
+    std::string last_input = "";
     std::string status_msg = "Welcome! You are RED. Use Arrows to move, ENTER to select.";
     std::string ai_type = "Random AI";
     std::string model_path = "";
@@ -44,6 +46,7 @@ struct GameSettings {
 };
 
 std::optional<GameSettings> start_menu();
-void render_board(const GameState& game_state, const UIGameState& state);
+
+ftxui::Element render_board(const GameState& game_state, const UIGameState& state);
 
 } // namespace stratego

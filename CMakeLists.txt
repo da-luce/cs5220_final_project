@@ -19,8 +19,7 @@ FetchContent_MakeAvailable(googletest)
 # LibTorch
 find_package(Torch REQUIRED)
 
-# ncurses
-find_package(Curses REQUIRED)
+
 
 # --- Subdirectories ---
 add_subdirectory(stratego)

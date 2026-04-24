@@ -8,16 +8,20 @@
 #include "../rl/networks/torsos/cnn.h"
 #include "../rl/encoding/board.h"
 
-#include <ncurses.h>
-#include <locale.h>
 #include <iostream>
 #include <string>
 #include <optional>
 #include <memory>
-#include "tui.h"
+#include <thread>
+#include <chrono>
 #include "stratego_ui.h"
 
+#include <ftxui/component/component.hpp>
+#include <ftxui/component/screen_interactive.hpp>
+#include <ftxui/component/event.hpp>
+
 using namespace stratego;
+using namespace ftxui;
 
 void append_combat_msg(CombatResult cr, std::string& msg, bool& game_over) {
     if (cr == CombatResult::AttackerWins) msg += " Attacker Wins!";
@@ -32,46 +36,37 @@ void append_combat_msg(CombatResult cr, std::string& msg, bool& game_over) {
     }
 }
 
-std::optional<Move> process_human_input(const GameState& state, UIGameState& ui_state) {
-    int ch = getch();
-    if (ch == ERR) {
-        ui_state.last_ch = -1;
-        return std::nullopt;
-    }
-    
-    ui_state.last_ch = ch;
+std::optional<Move> process_human_input(Event event, const GameState& state, UIGameState& ui_state) {
     int w = state.board.get_width();
     int h = state.board.get_height();
+    ui_state.last_input = "";
 
     if (ui_state.in_confrontation) {
-        if (ch == 'q' || ch == 'Q') {
+        if (event == Event::Character('q') || event == Event::Character('Q')) {
             ui_state.exit_game = true;
-        } else if (ch == '\n' || ch == '\r' || ch == ' ' || ch == KEY_ENTER) {
+        } else if (event == Event::Return || event == Event::Character(' ')) {
             ui_state.in_confrontation = false;
-            ui_state.last_ch = -1;
             return ui_state.pending_move;
         }
         return std::nullopt;
     }
 
-    if (ch == 'q' || ch == 'Q') ui_state.exit_game = true;
-    else if (ch == 'r' || ch == 'R') {
+    if (event == Event::Character('q') || event == Event::Character('Q')) ui_state.exit_game = true;
+    else if (event == Event::Character('r') || event == Event::Character('R')) {
         ui_state.game_over = true;
         ui_state.status_msg = "You resigned. Game Over.";
         ui_state.selected_x = -1;
         ui_state.selected_y = -1;
-        ui_state.last_ch = -1;
     }
-    else if (ch == 'c' || ch == 'C') {
+    else if (event == Event::Character('c') || event == Event::Character('C')) {
         ui_state.casual_mode = !ui_state.casual_mode;
         ui_state.status_msg = ui_state.casual_mode ? "Casual mode ON (revealed pieces stay visible)." : "Casual mode OFF.";
-        ui_state.last_ch = -1;
     }
-    else if ((ch == KEY_UP || ch == 'k') && ui_state.cursor_y > 0) ui_state.cursor_y--;
-    else if ((ch == KEY_DOWN || ch == 'j') && ui_state.cursor_y < h - 1) ui_state.cursor_y++;
-    else if ((ch == KEY_LEFT || ch == 'h') && ui_state.cursor_x > 0) ui_state.cursor_x--;
-    else if ((ch == KEY_RIGHT || ch == 'l') && ui_state.cursor_x < w - 1) ui_state.cursor_x++;
-    else if (ch == '\n' || ch == '\r' || ch == ' ' || ch == KEY_ENTER) {
+    else if ((event == Event::ArrowUp || event == Event::Character('k')) && ui_state.cursor_y > 0) { ui_state.cursor_y--; ui_state.last_input = "UP"; }
+    else if ((event == Event::ArrowDown || event == Event::Character('j')) && ui_state.cursor_y < h - 1) { ui_state.cursor_y++; ui_state.last_input = "DOWN"; }
+    else if ((event == Event::ArrowLeft || event == Event::Character('h')) && ui_state.cursor_x > 0) { ui_state.cursor_x--; ui_state.last_input = "LEFT"; }
+    else if ((event == Event::ArrowRight || event == Event::Character('l')) && ui_state.cursor_x < w - 1) { ui_state.cursor_x++; ui_state.last_input = "RIGHT"; }
+    else if (event == Event::Return || event == Event::Character(' ')) {
         if (ui_state.selected_x == -1) {
             Piece p = state.board.get_piece(ui_state.cursor_x, ui_state.cursor_y);
             if (p.owner == state.current_turn && p.is_mobile()) {
@@ -105,7 +100,7 @@ std::optional<Move> process_human_input(const GameState& state, UIGameState& ui_
                 }
             }
         }
-    } else if (ch == 27) { // ESC key
+    } else if (event == Event::Escape) {
         ui_state.selected_x = -1; ui_state.selected_y = -1;
         ui_state.status_msg = "Piece deselected.";
     }
@@ -113,12 +108,8 @@ std::optional<Move> process_human_input(const GameState& state, UIGameState& ui_
 }
 
 int main() {
-    setlocale(LC_ALL, ""); // Ensure terminal supports full Unicode characters
-    tui::init_ncurses();
-
     auto settings_opt = start_menu();
     if (!settings_opt) {
-        endwin();
         return 0;
     }
     GameSettings settings = *settings_opt;
@@ -146,7 +137,6 @@ int main() {
         blue_agent = std::make_unique<Random>();
     } else {
         // Initialize NeuralPolicy
-        // We need to recreate the model architecture used during training.
         int in_channels = get_encoding_channels(state.board.config);
         int hidden_filters = 64;
 
@@ -162,46 +152,85 @@ int main() {
             torch::load(model, settings.model_path);
             blue_agent = std::make_unique<NeuralPolicy>(model, state.board.config);
         } catch (const std::exception& e) {
-            endwin();
             std::cerr << "Error loading model: " << e.what() << "\n";
             return 1;
-        }    }
+        }
+    }
 
     GameRunner orch(state, std::move(red_agent), std::move(blue_agent));
+    auto screen = ScreenInteractive::Fullscreen();
+    bool ai_thinking = false;
 
-    while (!ui_state.exit_game) {
-        render_board(orch.get_state(), ui_state);
+    auto renderer = Renderer([&] {
+        return render_board(orch.get_state(), ui_state);
+    });
 
+    auto catch_event = CatchEvent(renderer, [&](Event event) {
+        if (ui_state.exit_game) {
+            screen.Exit();
+            return true;
+        }
+        
         if (ui_state.game_over) {
-            timeout(-1); // Restore blocking getch indefinitely for the exit screen
-            int ch = getch();
-            if (ch == 'q' || ch == 'Q') {
-                break;
+            if (event == Event::Character('q') || event == Event::Character('Q')) {
+                screen.Exit();
+                return true;
             }
-            continue;
+            return false;
         }
 
-        Policy* active = orch.get_active_agent();
+        if (ai_thinking) return true; // Block input while AI is thinking
 
+        Policy* active = orch.get_active_agent();
         if (active->is_human()) {
-            auto m_opt = process_human_input(orch.get_state(), ui_state);
+            auto m_opt = process_human_input(event, orch.get_state(), ui_state);
             if (m_opt) {
                 static_cast<Human*>(active)->set_next_move(*m_opt);
                 CombatResult res = orch.step();
                 ui_state.status_msg = "Move resolved.";
                 append_combat_msg(res, ui_state.status_msg, ui_state.game_over);
+                
+                // Immediately trigger AI turn if game is not over and it's AI turn
+                if (!ui_state.game_over && !orch.get_active_agent()->is_human()) {
+                    ai_thinking = true;
+                    ui_state.status_msg = "AI is thinking...";
+                    
+                    auto task = [&screen]() {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(600));
+                        screen.PostEvent(Event::Custom);
+                    };
+                    std::thread(task).detach();
+                }
             }
-        } else {
-            ui_state.status_msg = "AI is thinking...";
-            render_board(orch.get_state(), ui_state);
-            napms(600); // 600ms delay so AI move is visible
-
+            return true;
+        }
+        return false;
+    });
+    
+    // We need to catch the Custom event which is fired by the AI thread
+    auto final_component = CatchEvent(catch_event, [&](Event event) {
+        if (event == Event::Custom && ai_thinking) {
             CombatResult res = orch.step();
             ui_state.status_msg = "AI moved.";
             append_combat_msg(res, ui_state.status_msg, ui_state.game_over);
+            ai_thinking = false;
+            return true;
         }
+        return false;
+    });
+
+    // Check if AI goes first
+    if (!orch.get_active_agent()->is_human()) {
+        ai_thinking = true;
+        ui_state.status_msg = "AI is thinking...";
+        auto task = [&screen]() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(600));
+            screen.PostEvent(Event::Custom);
+        };
+        std::thread(task).detach();
     }
 
-    endwin();
+    screen.Loop(final_component);
+
     return 0;
 }
