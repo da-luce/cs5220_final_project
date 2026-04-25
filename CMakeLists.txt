@@ -1,29 +1,65 @@
-cmake_minimum_required(VERSION 3.11)
-project(StrategoRL CXX)
+cmake_minimum_required(VERSION 3.14)
+project(StrategoProject CXX)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# --- Dependencies via FetchContent ---
-# This automatically downloads required libraries at configure time.
+# --- Dependencies ---
 include(FetchContent)
 
-# nlohmann/json for parsing setup data
-FetchContent_Declare(
-  nlohmann_json
-  GIT_REPOSITORY https://github.com/nlohmann/json.git
-  GIT_TAG        v3.11.3 # Use a specific version for reproducibility
-)
-FetchContent_MakeAvailable(nlohmann_json)
+# JSON
+FetchContent_Declare(json URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
+FetchContent_MakeAvailable(json)
 
-# Enable testing with CTest
+# GTest
+FetchContent_Declare(googletest GIT_REPOSITORY https://github.com/google/googletest.git GIT_TAG release-1.12.1)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+# LibTorch
+find_package(Torch REQUIRED)
+
+add_definitions(-DPROJECT_ROOT_DIR=\"${CMAKE_SOURCE_DIR}\")
+
+# --- Subdirectories ---
+add_subdirectory(stratego)
+add_subdirectory(rl)
+add_subdirectory(ui)
+
+# --- The Unified Test Binary ---
 enable_testing()
 
-# Include the core Stratego logic and tests
-add_subdirectory(stratego)
+add_executable(unified_test
+    # Feature Extraction implementation + test
+    rl/encoding/board.cpp
+    rl/encoding/actions.cpp
+    rl/encoding/test_board.cpp
+    rl/encoding/test_actions.cpp
+    
+    # Stratego Logic tests (files located in stratego/ folder)
+    stratego/test_board.cpp
+    stratego/test_engine.cpp
+    stratego/test_state.cpp
+    stratego/test_setup.cpp
+)
 
-# Include the frontend module
-add_subdirectory(frontend)
+# Rename 'unified_test' to just './test' in the build directory
+set_target_properties(unified_test PROPERTIES OUTPUT_NAME "test")
 
-# Include the RL module
-add_subdirectory(rl)
+# Link everything
+target_link_libraries(unified_test 
+    PRIVATE 
+    stratego_core             # Defined in stratego/CMakeLists.txt
+    GTest::gtest_main 
+    "${TORCH_LIBRARIES}"
+    nlohmann_json::nlohmann_json
+)
+
+# Include directories so headers like "features.h" and "board.h" are found
+target_include_directories(unified_test PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/features
+)
+
+include(GoogleTest)
+gtest_discover_tests(unified_test)
