@@ -53,56 +53,43 @@ if(BUILD_ITT_STUB)
 endif()
 
 # --- Subdirectories ---
-add_subdirectory(stratego)
-add_subdirectory(rl)
-add_subdirectory(ui)
+add_subdirectory(src/stratego)
+add_subdirectory(src/rl)
+add_subdirectory(src/ui)
 
 # --- The Unified Test Binary ---
 enable_testing()
 
 add_executable(unified_test
-    # Feature Extraction implementation + test
-    rl/encoding/board.cpp
-    rl/encoding/actions.cpp
-    rl/encoding/test_board.cpp
-    rl/encoding/test_actions.cpp
+    # RL tests
+    src/rl/encoding/test_board.cpp
+    src/rl/encoding/test_actions.cpp
     
-    # Stratego Logic tests (files located in stratego/ folder)
-    stratego/test_board.cpp
-    stratego/test_engine.cpp
-    stratego/test_state.cpp
-    stratego/test_setup.cpp
+    # Stratego Logic tests
+    src/stratego/test_board.cpp
+    src/stratego/test_engine.cpp
+    src/stratego/test_state.cpp
+    src/stratego/test_setup.cpp
 )
 
 # Rename 'unified_test' to just './test' in the build directory
 set_target_properties(unified_test PROPERTIES OUTPUT_NAME "test")
 
 # Link everything
-target_link_libraries(unified_test
-    PRIVATE
-    stratego_core             # Defined in stratego/CMakeLists.txt
-    GTest::gtest_main
+target_link_libraries(unified_test 
+    PRIVATE 
+    stratego_core             # Defined in src/stratego/CMakeLists.txt
+    rl_core                   # Defined in src/rl/CMakeLists.txt
+    GTest::gtest_main 
     "${TORCH_LIBRARIES}"
     nlohmann_json::nlohmann_json
     $<$<BOOL:${BUILD_ITT_STUB}>:ittnotify_stub>
     $<$<BOOL:${NCCL_LIB}>:${NCCL_LIB}>
 )
 
-# TODO: not sure if needed =
-# # libtorch_cuda.so references NCCL symbols that may not be present on this system.
-# # The test binary never calls CUDA/NCCL code so it's safe to defer resolution to runtime.
-# if(APPLE)
-#     # macOS equivalent: allows undefined symbols to be resolved at runtime
-#     target_link_options(unified_test PRIVATE -Wl,-undefined,dynamic_lookup)
-# else()
-#     # Linux/GNU linker
-#     target_link_options(unified_test PRIVATE -Wl,--allow-shlib-undefined)
-# endif()
-
-# Include directories so headers like "features.h" and "board.h" are found
+# Include directories so headers like "rl/encoding/board.h" and "stratego/board.h" are found
 target_include_directories(unified_test PRIVATE 
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/features
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 include(GoogleTest)
