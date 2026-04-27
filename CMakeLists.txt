@@ -22,25 +22,23 @@ find_package(Torch REQUIRED)
 add_definitions(-DPROJECT_ROOT_DIR=\"${CMAKE_SOURCE_DIR}\")
 
 # --- Subdirectories ---
-add_subdirectory(stratego)
-add_subdirectory(rl)
-add_subdirectory(ui)
+add_subdirectory(src/stratego)
+add_subdirectory(src/rl)
+add_subdirectory(src/ui)
 
 # --- The Unified Test Binary ---
 enable_testing()
 
 add_executable(unified_test
-    # Feature Extraction implementation + test
-    rl/encoding/board.cpp
-    rl/encoding/actions.cpp
-    rl/encoding/test_board.cpp
-    rl/encoding/test_actions.cpp
+    # RL tests
+    src/rl/encoding/test_board.cpp
+    src/rl/encoding/test_actions.cpp
     
-    # Stratego Logic tests (files located in stratego/ folder)
-    stratego/test_board.cpp
-    stratego/test_engine.cpp
-    stratego/test_state.cpp
-    stratego/test_setup.cpp
+    # Stratego Logic tests
+    src/stratego/test_board.cpp
+    src/stratego/test_engine.cpp
+    src/stratego/test_state.cpp
+    src/stratego/test_setup.cpp
 )
 
 # Rename 'unified_test' to just './test' in the build directory
@@ -49,16 +47,16 @@ set_target_properties(unified_test PROPERTIES OUTPUT_NAME "test")
 # Link everything
 target_link_libraries(unified_test 
     PRIVATE 
-    stratego_core             # Defined in stratego/CMakeLists.txt
+    stratego_core             # Defined in src/stratego/CMakeLists.txt
+    rl_core                   # Defined in src/rl/CMakeLists.txt
     GTest::gtest_main 
     "${TORCH_LIBRARIES}"
     nlohmann_json::nlohmann_json
 )
 
-# Include directories so headers like "features.h" and "board.h" are found
+# Include directories so headers like "rl/encoding/board.h" and "stratego/board.h" are found
 target_include_directories(unified_test PRIVATE 
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/features
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 include(GoogleTest)
