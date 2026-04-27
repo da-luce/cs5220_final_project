@@ -19,7 +19,10 @@ add_executable(play
 )
 
 # The 'play' executable needs to find headers from the rl and runtime directories.
-target_include_directories(play PRIVATE ${CMAKE_SOURCE_DIR})
+target_include_directories(play PRIVATE 
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}
+)
 
 # Link the executable against the core game logic library (stratego_core),
 # the RL library (rl_core), LibTorch, and FTXUI.
