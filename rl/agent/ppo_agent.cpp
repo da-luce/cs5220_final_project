@@ -44,6 +44,44 @@ AgentOutput<int> PPOAgent::act(const torch::Tensor& obs, const torch::Tensor& ma
     return output;
 }
 
+BatchedAgentOutput PPOAgent::act_batch(const torch::Tensor& obs_batch, const torch::Tensor& mask_batch) {
+    torch::NoGradGuard no_grad;
+    model->eval();
+    auto device = model->parameters()[0].device();
+    int N = obs_batch.size(0);
+
+    auto [logits, values] = model->forward(obs_batch.to(device));
+    torch::Tensor flat_logits = logits.view({N, -1});
+    torch::Tensor masked_logits = flat_logits.clone();
+    masked_logits.masked_fill_(mask_batch.to(device) == 0, -1e9);
+
+    torch::Tensor probs = torch::softmax(masked_logits, 1);
+    torch::Tensor actions = torch::multinomial(probs, 1).squeeze(1);           // [N]
+    torch::Tensor log_prob_mat = torch::log_softmax(masked_logits, 1);
+    torch::Tensor sel_log_probs = log_prob_mat.gather(1, actions.unsqueeze(1)).squeeze(1); // [N]
+    torch::Tensor vals = values.squeeze(1);                                    // [N]
+
+    // One batch transfer to CPU instead of 3N individual GPU syncs
+    auto act_cpu = actions.to(torch::kCPU);
+    auto lp_cpu  = sel_log_probs.to(torch::kCPU);
+    auto val_cpu = vals.to(torch::kCPU);
+
+    auto* act_ptr = act_cpu.data_ptr<int64_t>();
+    auto* lp_ptr  = lp_cpu.data_ptr<float>();
+    auto* val_ptr = val_cpu.data_ptr<float>();
+
+    BatchedAgentOutput out;
+    out.actions.resize(N);
+    out.log_probs.resize(N);
+    out.values.resize(N);
+    for (int i = 0; i < N; ++i) {
+        out.actions[i]   = static_cast<int>(act_ptr[i]);
+        out.log_probs[i] = lp_ptr[i];
+        out.values[i]    = val_ptr[i];
+    }
+    return out;
+}
+
 void PPOAgent::update_weights(RolloutBuffer<torch::Tensor, int>& buffer) {
     if (buffer.size() == 0) return;
     model->train();

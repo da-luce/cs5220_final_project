@@ -142,10 +142,12 @@ int main(int argc, char** argv) {
     std::string model_name = variant_str + "_" + setup_str + ".pt";
     std::string model_path = std::string(PROJECT_ROOT_DIR) + "/models/" + model_name;
 
-    auto env = std::make_unique<StrategoEnvironment>(config, setup_type, 60);
+    const int batch_size = 64;
+    std::vector<std::unique_ptr<StrategoEnvironment>> envs(batch_size);
+    for (auto& e : envs) e = std::make_unique<StrategoEnvironment>(config, setup_type, 60);
 
     int obs_channels = get_encoding_channels(config);
-    int action_channels = env->get_action_encoder().get_action_channels();
+    int action_channels = envs[0]->get_action_encoder().get_action_channels();
     int H = config.height;
     int W = config.width;
 
@@ -177,14 +179,15 @@ int main(int argc, char** argv) {
     PPOAgent agent(challenger, 1e-4, 0.99, 1, 0.2); 
     RolloutBuffer<torch::Tensor, int> buffer;
 
-    // Each rank handles its own slice of episodes so total work scales with world_size
-    int local_episodes = num_episodes / world_size;
+    // Each rank runs the full episode count independently — 4 GPUs = 4x total experience
+    int local_episodes = num_episodes;
     int sync_freq = 10; // AllReduce every N episodes to amortize NCCL overhead
 
     if (rank == 0) {
         std::cout << "Starting Self-Play Training (Challenger vs Champion) for "
-                  << local_episodes << " episodes per rank (" << num_episodes << " total across "
-                  << world_size << " ranks), syncing every " << sync_freq << " episodes..." << std::endl;
+                  << local_episodes << " episodes per rank (" << (long long)local_episodes * world_size
+                  << " total across " << world_size << " ranks), syncing every "
+                  << sync_freq << " episodes..." << std::endl;
     }
 
     float total_reward = 0;
@@ -192,66 +195,113 @@ int main(int argc, char** argv) {
     int eval_freq = 500;
     float win_threshold = 0.55f;
 
-    for (int i = 1; i <= local_episodes; ++i) {
-        torch::Tensor obs = env->reset();
-        bool done = false;
-        std::vector<stratego::Player> move_owners;
+    // Per-env episode state: each env accumulates its own in-flight episode into
+    // env_bufs[e]; completed episodes are merged into the shared buffer for PPO updates.
+    std::vector<torch::Tensor> obs_vec(batch_size);
+    std::vector<std::vector<stratego::Player>> move_owners_vec(batch_size);
+    std::vector<RolloutBuffer<torch::Tensor, int>> env_bufs(batch_size);
+    std::vector<bool> needs_reset(batch_size, true);
 
-        while (!done) {
-            torch::Tensor mask = env->get_action_mask();
-            if (mask.sum().item<float>() == 0) {
-                float final_reward = 1.0f;
-                stratego::Player winner = (env->get_current_player() == stratego::Player::Red) ? 
-                                           stratego::Player::Blue : stratego::Player::Red;
-                
-                if (!move_owners.empty()) {
-                    int start_idx = (int)buffer.size() - (int)move_owners.size();
-                    for (int j = 0; j < (int)move_owners.size(); ++j) {
-                        float r = (move_owners[j] == winner) ? final_reward : -final_reward;
-                        buffer.rewards[start_idx + j] = r;
-                        total_reward += r;
-                    }
-                    buffer.is_terminals.back() = true;
-                }
-                done = true;
-                break;
-            }
+    int last_sync = 0, last_eval = 0, last_update = 0;
 
-            move_owners.push_back(env->get_current_player());
-            auto output = agent.act(obs, mask);
-            auto step_res = env->step(output.action);
-            
-            buffer.observations.push_back(obs);
-            buffer.actions.push_back(output.action);
-            buffer.log_probs.push_back(output.log_prob);
-            buffer.values.push_back(output.value);
-            buffer.masks.push_back(mask);
-            buffer.rewards.push_back(0.0f);
-            buffer.is_terminals.push_back(false);
+    auto merge_env_buf = [&](int e) {
+        for (size_t j = 0; j < env_bufs[e].size(); ++j) {
+            buffer.observations.push_back(env_bufs[e].observations[j]);
+            buffer.actions.push_back(env_bufs[e].actions[j]);
+            buffer.log_probs.push_back(env_bufs[e].log_probs[j]);
+            buffer.values.push_back(env_bufs[e].values[j]);
+            buffer.masks.push_back(env_bufs[e].masks[j]);
+            buffer.rewards.push_back(env_bufs[e].rewards[j]);
+            buffer.is_terminals.push_back(env_bufs[e].is_terminals[j]);
+        }
+        env_bufs[e].clear();
+        move_owners_vec[e].clear();
+    };
 
-            obs = step_res.observation;
-            done = step_res.terminated;
-
-            if (done) {
-                float final_reward = step_res.reward;
-                stratego::Player last_mover = move_owners.back();
-
-                int start_idx = (int)buffer.size() - (int)move_owners.size();
-                for (int j = 0; j < (int)move_owners.size(); ++j) {
-                    float r = (move_owners[j] == last_mover) ? final_reward : -final_reward;
-                    buffer.rewards[start_idx + j] = r;
-                    total_reward += r;
-                }
-                buffer.is_terminals.back() = true;
+    while (games_count < local_episodes) {
+        // Reset finished envs
+        for (int e = 0; e < batch_size; ++e) {
+            if (needs_reset[e]) {
+                obs_vec[e] = envs[e]->reset();
+                move_owners_vec[e].clear();
+                env_bufs[e].clear();
+                needs_reset[e] = false;
             }
         }
-        games_count++;
 
-        agent.update_weights(buffer);
-        buffer.clear();
+        // Collect active (non-trapped) envs for the batched forward pass
+        std::vector<int> active;
+        std::vector<torch::Tensor> obs_list, mask_list;
+
+        for (int e = 0; e < batch_size; ++e) {
+            torch::Tensor mask = envs[e]->get_action_mask();
+            if (mask.sum().item<float>() == 0) {
+                // Trapped: opponent wins
+                stratego::Player winner = (envs[e]->get_current_player() == stratego::Player::Red)
+                                          ? stratego::Player::Blue : stratego::Player::Red;
+                for (int j = 0; j < (int)move_owners_vec[e].size(); ++j) {
+                    float r = (move_owners_vec[e][j] == winner) ? 1.0f : -1.0f;
+                    env_bufs[e].rewards[j] = r;
+                    total_reward += r;
+                }
+                if (!env_bufs[e].is_terminals.empty())
+                    env_bufs[e].is_terminals.back() = true;
+                merge_env_buf(e);
+                needs_reset[e] = true;
+                games_count++;
+                continue;
+            }
+            active.push_back(e);
+            obs_list.push_back(obs_vec[e]);
+            mask_list.push_back(mask);
+        }
+
+        if (!active.empty()) {
+            // One batched forward pass for all active envs
+            auto outputs = agent.act_batch(torch::stack(obs_list), torch::stack(mask_list));
+
+            for (int ai = 0; ai < (int)active.size(); ++ai) {
+                int e = active[ai];
+                move_owners_vec[e].push_back(envs[e]->get_current_player());
+
+                auto step_res = envs[e]->step(outputs.actions[ai]);
+
+                env_bufs[e].observations.push_back(obs_vec[e]);
+                env_bufs[e].actions.push_back(outputs.actions[ai]);
+                env_bufs[e].log_probs.push_back(outputs.log_probs[ai]);
+                env_bufs[e].values.push_back(outputs.values[ai]);
+                env_bufs[e].masks.push_back(mask_list[ai]);
+                env_bufs[e].rewards.push_back(0.0f);
+                env_bufs[e].is_terminals.push_back(false);
+
+                obs_vec[e] = step_res.observation;
+
+                if (step_res.terminated) {
+                    float fr = step_res.reward;
+                    stratego::Player last_mover = move_owners_vec[e].back();
+                    for (int j = 0; j < (int)move_owners_vec[e].size(); ++j) {
+                        float r = (move_owners_vec[e][j] == last_mover) ? fr : -fr;
+                        env_bufs[e].rewards[j] = r;
+                        total_reward += r;
+                    }
+                    env_bufs[e].is_terminals.back() = true;
+                    merge_env_buf(e);
+                    needs_reset[e] = true;
+                    games_count++;
+                }
+            }
+        }
+
+        // PPO update every batch_size completed games
+        if (games_count - last_update >= batch_size && buffer.size() > 0) {
+            agent.update_weights(buffer);
+            buffer.clear();
+            last_update = games_count;
+        }
 
 #ifdef USE_NCCL
-        if (i % sync_freq == 0) {
+        if (games_count - last_sync >= sync_freq) {
+            last_sync = games_count;
             torch::NoGradGuard no_grad;
             cudaStream_t stream;
             cudaStreamCreate(&stream);
@@ -267,14 +317,15 @@ int main(int argc, char** argv) {
         }
 #endif
 
-        if (rank == 0 && i % eval_freq == 0) {
+        if (rank == 0 && games_count - last_eval >= eval_freq && games_count > 0) {
+            last_eval = games_count;
             auto now = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
-            
-            std::cout << "\n--- Episode " << i << ": Evaluating Challenger vs Champion ---" << std::endl;
+
+            std::cout << "\n--- Episode " << games_count << ": Evaluating Challenger vs Champion ---" << std::endl;
             auto res = evaluate_vs_champion(challenger, champion, config, setup_type, device, 100);
             std::cout << "Challenger Win Rate: " << res.win_rate * 100 << "% | Draw Rate: " << res.draw_rate * 100 << "%" << std::endl;
-            
+
             if (res.win_rate >= win_threshold) {
                 std::cout << ">>> CHALLENGER IS THE NEW CHAMPION! Updating champion... <<<" << std::endl;
                 torch::NoGradGuard no_grad;
@@ -289,10 +340,12 @@ int main(int argc, char** argv) {
             }
             std::cout << "Time: " << duration << "s" << std::endl;
             std::cout << "---------------------------------------------------------" << std::endl;
-            
-            total_reward = 0;
-            games_count = 0;
         }
+    }
+
+    if (buffer.size() > 0) {
+        agent.update_weights(buffer);
+        buffer.clear();
     }
 
     if (rank == 0) {
