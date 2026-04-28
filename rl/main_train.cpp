@@ -180,13 +180,15 @@ int main(int argc, char** argv) {
     PPOAgent agent(challenger, 1e-4, 0.99, 1, 0.2); 
     RolloutBuffer<torch::Tensor, int> buffer;
 
-    // Each rank runs the full episode count independently — 4 GPUs = 4x total experience
-    int local_episodes = num_episodes;
-    int sync_freq = 10; // AllReduce every N episodes to amortize NCCL overhead
+    // Divide work across ranks: each rank does 1/world_size of episodes for 4x wall-clock speedup.
+    // Ranks share gradients via AllReduce after each PPO update, so the effective batch size
+    // seen per update is batch_size * world_size.
+    int local_episodes = num_episodes / world_size;
+    int sync_freq = batch_size; // sync once per PPO update, not once per step
 
     if (rank == 0) {
         std::cout << "Starting Self-Play Training (Challenger vs Champion) for "
-                  << local_episodes << " episodes per rank (" << (long long)local_episodes * world_size
+                  << local_episodes << " episodes per rank (" << num_episodes
                   << " total across " << world_size << " ranks), syncing every "
                   << sync_freq << " episodes..." << std::endl;
     }
