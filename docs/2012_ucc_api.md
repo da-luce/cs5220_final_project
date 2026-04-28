@@ -2,7 +2,7 @@
 
 In 2012, the The University Computer Club Inc. of the University of Western Australia hosted a Stratego bot **competition**. This document describes the standard input/output (stdio) text protocol used by the game manager to communicate with AI bots. Bots act as standalone processes. The game manager communicates with bots by writing to their `stdin` and reading their moves from `stdout`. It was developed by Sam Moore of UCC. It's source is added a a submodule in [third_party/strategoevaluator](./third_party/strategoevaluator).
 
-An important note on coordinates:
+## Coordinates
 
 The UCC 2012 Stratego bots use an absolute global coordinate system. The Game Manager does not translate or flip the board based on which side you are playing. Your bot must be aware of its assigned color and handle its own spatial logic accordingly.
 
@@ -16,24 +16,16 @@ When programming your bot, adhere strictly to these absolute rules:
   - `UP` always decreases the Y-coordinate (moving towards Row 0 / Red's side).
   - `DOWN` always increases the Y-coordinate (moving towards Row 9 / Blue's side).
 
-----
+## Special Notes
 
-Unlike many modern engines, the UCC 2012 Stratego bots do not use an absolute global coordinate system. Instead, they operate on a strictly relative perspective. Every bot is hardcoded to believe it is playing from the bottom of the board, regardless of its actual assigned color.
-
-When programming your bot, adhere strictly to these relative rules:
-
--  **The Starting Zone**: Your bot must assume its initial setup formation is being placed on Rows 6, 7, 8, and 9. The enemy is always assumed to be at the top (Rows 0 through 3).
-- **The Origin**: The coordinate (0,0) is always the top-left corner from your bot's perspective (the deepest, leftmost corner of the enemy's side).
-- **Movement Directions**: Directions are tied to your bot's forward-facing perspective, not the global board.
-
-- `UP` always means advancing into enemy territory (decreasing your Y-coordinate towards Row 0).
-- `DOWN` always means retreating towards your own back line (increasing your Y-coordinate towards Row 9).
-
-- **Engine Translation**: You do not need to write logic to "flip" your bot when playing as Blue. The central Game Manager is responsible for silently translating your bot's relative UP/DOWN moves and Y coordinates into the true absolute coordinates of the active game board.
+- The UCC bots do not adhere to the two-square or more-square moving rules, briefly described on [Wikipedia](https://en.wikipedia.org/wiki/Stratego#Rules_of_movement) and in more detail on this archived page for the [2010 Computer Stratego World Championship](https://web.archive.org/web/20110123114925/http://www.strategousa.org/wiki/index.php/2010_Computer_Stratego_World_Championship). Thus, they will occasionally make moves that violate these rules, resulting in a win for the other player.
+- The `peternlewis` UCC bot has been observed to try and move non-scout pieces exactly 2 squares at a time when they lie on row 0. More investigation is needed as to why this happens.
 
 ---
 
-## 1. Important: Disable Buffering
+## Protocol
+
+### 1. Important: Disable Buffering
 Because the communication is synchronous and turn-based over standard streams, bots **must disable output buffering** to prevent the manager from hanging while waiting for a move.
 * **C++**: `cin.rdbuf()->pubsetbuf(NULL, 0); cout.rdbuf()->pubsetbuf(NULL, 0);`
 * **Python**: Run python with the `-u` flag (`python -u bot.py`) or use `sys.stdout.flush()`.
@@ -41,11 +33,11 @@ Because the communication is synchronous and turn-based over standard streams, b
 
 ---
 
-## 2. Setup Phase
+### 2. Setup Phase
 
 When the manager launches the bot, it sends the initial game parameters.
 
-### Input from Manager (Read via `stdin`):
+#### Input from Manager (Read via `stdin`):
 
 ```text
 <COLOUR> <OPPONENT_NAME> <WIDTH> <HEIGHT>
@@ -58,7 +50,7 @@ NOTE: These four parameters are sent on a SINGLE space-separated line. Bots usin
 - <WIDTH>: Board width (typically 10).
 - <HEIGHT>: Board height (typically 10).
 
-### Output from Bot (Write to stdout):
+#### Output from Bot (Write to stdout):
 
 The bot must immediately output its starting formation. For a standard 10x10 game, the setup zone is `10x4`.
 
@@ -82,7 +74,7 @@ BB31555583
 
 ---
 
-## 3. Initial Board State (Turn 0 Only)
+### 3. Initial Board State (Turn 0 Only)
 
 Immediately after providing the setup, the manager sends the full board state to the bot. The bot reads `<HEIGHT>` number of lines, each containing `<WIDTH>` characters.
 
@@ -95,7 +87,7 @@ Map Characters:
 
 ---
 
-## 4. Game Loop
+### 4. Game Loop
 
 After Turn 0, the game enters a continuous loop of **Result Interpretation -> Move Generation.**
 
@@ -140,7 +132,7 @@ When it is the bot's turn, it must output a single line describing its desired m
 - Example: `3 4 UP`
 - If the bot has no mobile pieces left, it must output: `NO_MOVE`
 
-## Example
+### Example
 
 ```text
 === SETUP PHASE ===
