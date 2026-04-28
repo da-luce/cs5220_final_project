@@ -11,6 +11,12 @@
 #include <chrono>
 #include <string>
 
+#ifdef USE_NCCL
+#include <mpi.h>
+#include <nccl.h>
+#include <cuda_runtime.h>
+#endif
+
 struct EvalResult {
     float win_rate;
     float draw_rate;
@@ -21,6 +27,7 @@ EvalResult evaluate_vs_champion(
     networks::StrategoNet champion,
     const stratego::BoardConfig& config,
     stratego::state::SetupType setup_type,
+    torch::Device device,
     int num_games = 50
 ) {
     challenger->eval();
@@ -53,10 +60,10 @@ EvalResult evaluate_vs_champion(
             }
             
             auto& active_net = is_challenger_turn ? challenger : champion;
-            auto [logits, value] = active_net->forward(obs.unsqueeze(0));
-            
+            auto [logits, value] = active_net->forward(obs.to(device).unsqueeze(0));
+
             torch::Tensor masked_logits = logits.view({1, -1}).clone();
-            masked_logits.masked_fill_(mask.unsqueeze(0) == 0, -1e9);
+            masked_logits.masked_fill_(mask.to(device).unsqueeze(0) == 0, -1e9);
 
             int action = torch::argmax(masked_logits, 1).item<int>();
             auto step_res = env.step(action);
@@ -90,6 +97,28 @@ int main(int argc, char** argv) {
     std::cout.setf(std::ios::unitbuf);
     auto start_time = std::chrono::high_resolution_clock::now();
 
+    int rank = 0;
+    int world_size = 1;
+
+#ifdef USE_NCCL
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+    cudaSetDevice(rank);
+
+    ncclUniqueId nccl_id;
+    if (rank == 0) ncclGetUniqueId(&nccl_id);
+    MPI_Bcast(&nccl_id, sizeof(nccl_id), MPI_BYTE, 0, MPI_COMM_WORLD);
+    ncclComm_t comm;
+    ncclCommInitRank(&comm, world_size, nccl_id, rank);
+#endif
+
+    torch::Device device = torch::kCPU;
+#ifdef USE_NCCL
+    device = torch::Device(torch::kCUDA, rank);
+#endif
+
+
     std::string variant_str = "tiny";
     std::string setup_str = "random";
     int num_episodes = 20000;
@@ -120,8 +149,11 @@ int main(int argc, char** argv) {
     int H = config.height;
     int W = config.width;
 
-    std::cout << "Config: Obs Channels=" << obs_channels << " Action Channels=" << action_channels << " Dim=" << H << "x" << W << std::endl;
-    std::cout << "Target Path: " << model_path << std::endl;
+    if (rank == 0) {
+        std::cout << "Config: Obs Channels=" << obs_channels << " Action Channels=" << action_channels << " Dim=" << H << "x" << W << std::endl;
+        std::cout << "Target Path: " << model_path << std::endl;
+        std::cout << "World size: " << world_size << std::endl;
+    }
 
     auto torso_challenger = std::make_shared<networks::torsos::CNNTorsoImpl>(obs_channels, 64, 0);
     networks::StrategoNet challenger(torso_challenger, action_channels * H * W, H * W);
@@ -139,13 +171,15 @@ int main(int argc, char** argv) {
         }
     }
 
-    challenger->to(torch::kCPU);
-    champion->to(torch::kCPU);
+    challenger->to(device);
+    champion->to(device);
 
     PPOAgent agent(challenger, 1e-4, 0.99, 1, 0.2); 
     RolloutBuffer<torch::Tensor, int> buffer;
 
-    std::cout << "Starting Self-Play Training (Challenger vs Champion) for " << num_episodes << " episodes..." << std::endl;
+    if (rank == 0) {
+        std::cout << "Starting Self-Play Training (Challenger vs Champion) for " << num_episodes << " episodes per rank..." << std::endl;
+    }
 
     float total_reward = 0;
     int games_count = 0;
@@ -210,12 +244,30 @@ int main(int argc, char** argv) {
         agent.update_weights(buffer);
         buffer.clear();
 
-        if (i % eval_freq == 0) {
+#ifdef USE_NCCL
+        // Average parameters across all ranks after each update
+        {
+            torch::NoGradGuard no_grad;
+            cudaStream_t stream;
+            cudaStreamCreate(&stream);
+            for (auto& param : challenger->parameters()) {
+                ncclAllReduce(param.data_ptr<float>(), param.data_ptr<float>(),
+                              param.numel(), ncclFloat, ncclSum, comm, stream);
+            }
+            cudaStreamSynchronize(stream);
+            cudaStreamDestroy(stream);
+            for (auto& param : challenger->parameters()) {
+                param.div_(world_size);
+            }
+        }
+#endif
+
+        if (rank == 0 && i % eval_freq == 0) {
             auto now = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
             
             std::cout << "\n--- Episode " << i << ": Evaluating Challenger vs Champion ---" << std::endl;
-            auto res = evaluate_vs_champion(challenger, champion, config, setup_type, 100);
+            auto res = evaluate_vs_champion(challenger, champion, config, setup_type, device, 100);
             std::cout << "Challenger Win Rate: " << res.win_rate * 100 << "% | Draw Rate: " << res.draw_rate * 100 << "%" << std::endl;
             
             if (res.win_rate >= win_threshold) {
@@ -238,7 +290,15 @@ int main(int argc, char** argv) {
         }
     }
 
-    torch::save(challenger, model_path);
-    std::cout << "Training complete. Final model saved to " << model_path << std::endl;
+    if (rank == 0) {
+        torch::save(challenger, model_path);
+        std::cout << "Training complete. Final model saved to " << model_path << std::endl;
+    }
+
+#ifdef USE_NCCL
+    ncclCommDestroy(comm);
+    MPI_Finalize();
+#endif
+
     return 0;
 }

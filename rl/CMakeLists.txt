@@ -38,4 +38,6 @@ target_include_directories(rl_core PUBLIC
 # Training executable
 add_executable(train_stratego main_train.cpp)
 target_link_libraries(train_stratego PRIVATE rl_core ittnotify_stub ${MPI_CXX_LIBRARIES} ${NCCL_LIB})
-target_compile_definitions(train_stratego PRIVATE USE_NCCL)
+if(NCCL_LIB AND NCCL_INCLUDE)
+    target_compile_definitions(train_stratego PRIVATE USE_NCCL)
+endif()
