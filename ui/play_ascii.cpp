@@ -108,6 +108,7 @@ std::optional<Move> process_human_input(Event event, const GameState& state, UIG
 }
 
 int main() {
+    torch::set_num_threads(1);
     auto settings_opt = start_menu();
     if (!settings_opt) {
         return 0;
@@ -150,6 +151,7 @@ int main() {
 
         try {
             torch::load(model, settings.model_path);
+            model->to(torch::kCPU);
             blue_agent = std::make_unique<NeuralPolicy>(model, state.board.config);
         } catch (const std::exception& e) {
             std::cerr << "Error loading model: " << e.what() << "\n";
