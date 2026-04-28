@@ -62,12 +62,13 @@ add_executable(unified_test
 set_target_properties(unified_test PROPERTIES OUTPUT_NAME "test")
 
 # Link everything
-target_link_libraries(unified_test 
-    PRIVATE 
+target_link_libraries(unified_test
+    PRIVATE
     stratego_core             # Defined in stratego/CMakeLists.txt
-    GTest::gtest_main 
+    GTest::gtest_main
     "${TORCH_LIBRARIES}"
     nlohmann_json::nlohmann_json
+    ittnotify_stub
 )
 
 # Include directories so headers like "features.h" and "board.h" are found
