@@ -4,9 +4,11 @@ find_package(MPI REQUIRED)
 find_package(OpenMP REQUIRED)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
-# NCCL (on Perlmutter: module load nccl)
-find_library(NCCL_LIB nccl HINTS $ENV{NCCL_HOME}/lib /usr/local/cuda/lib64)
-find_path(NCCL_INCLUDE nccl.h HINTS $ENV{NCCL_HOME}/include /usr/local/cuda/include)
+# NCCL — use the versioned .so bundled with PyTorch; system NCCL is too old
+set(NCCL_LIB "/global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2")
+find_path(NCCL_INCLUDE nccl.h
+    HINTS $ENV{NCCL_HOME}/include /usr/local/cuda/include
+          /global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/nvidia/nccl/include)
 
 # Define RL library
 add_library(rl_core
