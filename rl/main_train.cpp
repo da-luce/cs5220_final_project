@@ -177,8 +177,14 @@ int main(int argc, char** argv) {
     PPOAgent agent(challenger, 1e-4, 0.99, 1, 0.2); 
     RolloutBuffer<torch::Tensor, int> buffer;
 
+    // Each rank handles its own slice of episodes so total work scales with world_size
+    int local_episodes = num_episodes / world_size;
+    int sync_freq = 10; // AllReduce every N episodes to amortize NCCL overhead
+
     if (rank == 0) {
-        std::cout << "Starting Self-Play Training (Challenger vs Champion) for " << num_episodes << " episodes per rank..." << std::endl;
+        std::cout << "Starting Self-Play Training (Challenger vs Champion) for "
+                  << local_episodes << " episodes per rank (" << num_episodes << " total across "
+                  << world_size << " ranks), syncing every " << sync_freq << " episodes..." << std::endl;
     }
 
     float total_reward = 0;
@@ -186,7 +192,7 @@ int main(int argc, char** argv) {
     int eval_freq = 500;
     float win_threshold = 0.55f;
 
-    for (int i = 1; i <= num_episodes; ++i) {
+    for (int i = 1; i <= local_episodes; ++i) {
         torch::Tensor obs = env->reset();
         bool done = false;
         std::vector<stratego::Player> move_owners;
@@ -245,8 +251,7 @@ int main(int argc, char** argv) {
         buffer.clear();
 
 #ifdef USE_NCCL
-        // Average parameters across all ranks after each update
-        {
+        if (i % sync_freq == 0) {
             torch::NoGradGuard no_grad;
             cudaStream_t stream;
             cudaStreamCreate(&stream);
