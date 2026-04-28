@@ -27,12 +27,12 @@ TEST(StateTest, SerializeDeserializeHistory) {
     state1.board.place_piece(0, 0, PieceType::Scout, Player::Red);
     state1.board.place_piece(9, 9, PieceType::Scout, Player::Blue);
 
-    EXPECT_EQ(Engine::execute_move(state1, {0, 0, 0, 1}), CombatResult::MovedToEmpty); // R
-    EXPECT_EQ(Engine::execute_move(state1, {9, 9, 9, 8}), CombatResult::MovedToEmpty); // B
-    EXPECT_EQ(Engine::execute_move(state1, {0, 1, 0, 0}), CombatResult::MovedToEmpty); // R
-    EXPECT_EQ(Engine::execute_move(state1, {9, 8, 9, 9}), CombatResult::MovedToEmpty); // B
-    EXPECT_EQ(Engine::execute_move(state1, {0, 0, 0, 1}), CombatResult::MovedToEmpty); // R
-    EXPECT_EQ(Engine::execute_move(state1, {9, 9, 9, 8}), CombatResult::MovedToEmpty); // B
+    EXPECT_EQ(Engine::execute_move(state1, {0, 0, 0, 1}), CombatOutcome::MovedToEmpty); // R
+    EXPECT_EQ(Engine::execute_move(state1, {9, 9, 9, 8}), CombatOutcome::MovedToEmpty); // B
+    EXPECT_EQ(Engine::execute_move(state1, {0, 1, 0, 0}), CombatOutcome::MovedToEmpty); // R
+    EXPECT_EQ(Engine::execute_move(state1, {9, 8, 9, 9}), CombatOutcome::MovedToEmpty); // B
+    EXPECT_EQ(Engine::execute_move(state1, {0, 0, 0, 1}), CombatOutcome::MovedToEmpty); // R
+    EXPECT_EQ(Engine::execute_move(state1, {9, 9, 9, 8}), CombatOutcome::MovedToEmpty); // B
     
     state::GameBinary data = state::serialize(state1);
 

@@ -33,10 +33,10 @@ StepResult<torch::Tensor> StrategoEnvironment::step(const int& action_idx) {
     result.truncated = false;
     stratego::CombatResult outcome = stratego::Engine::execute_move(state, global_move);
     
-    if (outcome == stratego::CombatResult::FlagCaptured) {
+    if (outcome == stratego::CombatOutcome::FlagCaptured) {
         result.reward = 1.0f;
         result.terminated = true;
-    } else if (outcome == stratego::CombatResult::InvalidMove) {
+    } else if (outcome == stratego::CombatOutcome::InvalidMove) {
         result.reward = -1.0f;
         result.terminated = true;
     } else if (state.move_count >= state.max_moves) {

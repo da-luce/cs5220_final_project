@@ -10,3 +10,4 @@ models/
 *.log
 *.tmp
 *.swp
+.claude/

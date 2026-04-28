@@ -6,17 +6,6 @@
 
 namespace stratego {
 
-enum class CombatResult {
-    MovedToEmpty,
-    AttackerWins,
-    DefenderWins,
-    BothDestroyed,
-    FlagCaptured,
-    InvalidMove,
-    NoLegalMoves,   // Current player has no legal moves — they lose
-    Draw
-};
-
 class Engine {
 public:
     // The last two parameters are used for enforcing the More-Squares Rule,
