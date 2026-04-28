@@ -33,6 +33,9 @@ void append_combat_msg(CombatResult cr, std::string& msg, bool& game_over) {
     } else if (cr == CombatOutcome::Draw) {
         msg += " Game drawn.";
         game_over = true;
+    } else if (cr == CombatOutcome::NoLegalMoves) {
+        msg += " No legal moves — current player loses! Press Q to quit.";
+        game_over = true;
     }
 }
 
@@ -189,7 +192,13 @@ int main() {
                 CombatResult res = orch.step();
                 ui_state.status_msg = "Move resolved.";
                 append_combat_msg(res, ui_state.status_msg, ui_state.game_over);
-                
+
+                // If the next player has no legal moves, resolve that immediately
+                if (!ui_state.game_over && Engine::get_all_legal_moves(orch.get_state(), orch.get_state().current_turn).empty()) {
+                    CombatResult no_moves = orch.step();
+                    append_combat_msg(no_moves, ui_state.status_msg, ui_state.game_over);
+                }
+
                 // Immediately trigger AI turn if game is not over and it's AI turn
                 if (!ui_state.game_over && !orch.get_active_agent()->is_human()) {
                     ai_thinking = true;
@@ -214,6 +223,12 @@ int main() {
             ui_state.status_msg = "AI moved.";
             append_combat_msg(res, ui_state.status_msg, ui_state.game_over);
             ai_thinking = false;
+
+            // If the next player (human) has no legal moves, resolve immediately
+            if (!ui_state.game_over && Engine::get_all_legal_moves(orch.get_state(), orch.get_state().current_turn).empty()) {
+                CombatResult no_moves = orch.step();
+                append_combat_msg(no_moves, ui_state.status_msg, ui_state.game_over);
+            }
             return true;
         }
         return false;
