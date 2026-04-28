@@ -89,4 +89,4 @@ target_include_directories(unified_test PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(unified_test)
+gtest_discover_tests(unified_test DISCOVERY_MODE PRE_TEST)

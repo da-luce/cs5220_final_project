@@ -2,11 +2,15 @@ TORCH_CMAKE ?= /global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-
 BUILD_DIR   ?= build
 BUILD_TYPE  ?= Release
 
-# On Perlmutter, load a GCC ≥ 9 module before building:
+# On Perlmutter, load modules before building:
+#   module swap PrgEnv-cray PrgEnv-gnu
 #   module load gcc/12.2.0
+#   module load cray-mpich
 #   rm -rf build && make configure
-CC  ?= gcc
-CXX ?= g++
+CC     ?= gcc
+CXX    ?= g++
+MPICC  ?= mpicc
+MPICXX ?= mpicxx
 
 .PHONY: all configure train clean
 
@@ -18,7 +22,9 @@ configure:
 		-DCMAKE_PREFIX_PATH=$(TORCH_CMAKE) \
 		-DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
 		-DCMAKE_C_COMPILER=$(CC) \
-		-DCMAKE_CXX_COMPILER=$(CXX)
+		-DCMAKE_CXX_COMPILER=$(CXX) \
+		-DMPI_C_COMPILER=$(MPICC) \
+		-DMPI_CXX_COMPILER=$(MPICXX)
 
 train: configure
 	cmake --build $(BUILD_DIR) --target train_stratego -j$(shell nproc)
