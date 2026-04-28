@@ -67,13 +67,13 @@ int main(int argc, char** argv) {
 
             GameRunner runner(state, std::move(red_agent), std::move(blue_agent));
 
-            CombatResult cr = CombatResult::MovedToEmpty;
-            while (cr == CombatResult::MovedToEmpty || cr == CombatResult::AttackerWins || 
-                   cr == CombatResult::DefenderWins || cr == CombatResult::BothDestroyed) {
+            CombatResult cr = CombatOutcome::MovedToEmpty;
+            while (cr == CombatOutcome::MovedToEmpty || cr == CombatOutcome::AttackerWins || 
+                   cr == CombatOutcome::DefenderWins || cr == CombatOutcome::BothDestroyed) {
                 cr = runner.step();
             }
 
-            if (cr == CombatResult::FlagCaptured) {
+            if (cr == CombatOutcome::FlagCaptured) {
                 std::cout << "\nResult: Flag Captured!\n";
                 // The player whose turn it is when the flag is captured is the
                 // loser, since they failed to prevent the capture on their turn.
@@ -82,10 +82,10 @@ int main(int argc, char** argv) {
                 } else {
                     red_wins++;
                 }
-            } else if (cr == CombatResult::Draw) {
+            } else if (cr == CombatOutcome::Draw) {
                 std::cout << "\nResult: Draw!\n";
                 draws++;
-            } else if (cr == CombatResult::NoLegalMoves) {
+            } else if (cr == CombatOutcome::NoLegalMoves) {
                 Player loser = runner.get_last_attempted_player();
                 const char* who = (loser == Player::Red) ? "RED" : "BLUE";
                 std::cout << "\nResult: " << who << " has no legal moves — loses.\n";
@@ -94,7 +94,7 @@ int main(int argc, char** argv) {
                 } else {
                     red_wins++;
                 }
-            } else if (cr == CombatResult::InvalidMove) {
+            } else if (cr == CombatOutcome::InvalidMove) {
                 // Invalid moves are NOT added to move_history; pull the
                 // attempted move directly from the runner.
                 Move last = runner.get_last_attempted_move();
@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
                     red_wins++;
                 }
             } else {
-                std::cout << "\nResult: Other (" << static_cast<int>(cr) << ")\n";
+                std::cout << "\nResult: Other (" << static_cast<int>(cr.outcome) << ")\n";
                 draws++;
             }
         } catch (const std::exception& e) {

@@ -24,13 +24,13 @@ using namespace stratego;
 using namespace ftxui;
 
 void append_combat_msg(CombatResult cr, std::string& msg, bool& game_over) {
-    if (cr == CombatResult::AttackerWins) msg += " Attacker Wins!";
-    else if (cr == CombatResult::DefenderWins) msg += " Defender Wins!";
-    else if (cr == CombatResult::BothDestroyed) msg += " Both destroyed!";
-    else if (cr == CombatResult::FlagCaptured) {
+    if (cr == CombatOutcome::AttackerWins) msg += " Attacker Wins!";
+    else if (cr == CombatOutcome::DefenderWins) msg += " Defender Wins!";
+    else if (cr == CombatOutcome::BothDestroyed) msg += " Both destroyed!";
+    else if (cr == CombatOutcome::FlagCaptured) {
         msg += " FLAG CAPTURED!";
         game_over = true;
-    } else if (cr == CombatResult::Draw) {
+    } else if (cr == CombatOutcome::Draw) {
         msg += " Game drawn.";
         game_over = true;
     }

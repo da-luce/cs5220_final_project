@@ -250,36 +250,37 @@ Move PolicyUCC::get_move(const GameState& masked_state) {
     std::cout << "\n=== TURN " << (masked_state.move_history.size() / 2) << ": " << color_str << " MOVES ===\n";
 
     // 1. Process moves sequentially to flawlessly reconstruct combat.
-    // Outcomes and survivors are derived from the move's recorded
-    // attacker_type/defender_type — NOT from masked_state.board, which
-    // reflects the state AFTER all queued moves and would mis-report e.g.
-    // a DIES as BOTHDIE if the survivor was moved away in a later turn.
+    // Outcomes and survivors are derived from result_history — NOT from
+    // masked_state.board, which reflects the state AFTER all queued moves
+    // and would mis-report e.g. a DIES as BOTHDIE if the survivor was moved
+    // away in a later turn.
     while (last_processed_move_ < (int)masked_state.move_history.size()) {
         Move m = masked_state.move_history[last_processed_move_];
+        CombatResult r = masked_state.result_history[last_processed_move_];
 
         Piece attacker = local_board_.get_piece(m.start_x, m.start_y);
         Piece defender = local_board_.get_piece(m.end_x, m.end_y);
 
         std::string outcome;
-        if (m.defender_type == PieceType::Empty) {
+        if (r.defender_type == PieceType::Empty) {
             outcome = "OK";
-        } else if (m.defender_type == PieceType::Flag) {
+        } else if (r.defender_type == PieceType::Flag) {
             outcome = "FLAG";
-        } else if (m.defender_type == PieceType::Bomb) {
-            outcome = (m.attacker_type == PieceType::Miner) ? "KILLS" : "DIES";
-        } else if (m.attacker_type == PieceType::Spy && m.defender_type == PieceType::Marshal) {
+        } else if (r.defender_type == PieceType::Bomb) {
+            outcome = (r.attacker_type == PieceType::Miner) ? "KILLS" : "DIES";
+        } else if (r.attacker_type == PieceType::Spy && r.defender_type == PieceType::Marshal) {
             outcome = "KILLS";
         } else {
-            int a = static_cast<int>(m.attacker_type);
-            int d = static_cast<int>(m.defender_type);
+            int a = static_cast<int>(r.attacker_type);
+            int d = static_cast<int>(r.defender_type);
             outcome = (a > d) ? "KILLS" : (a < d) ? "DIES" : "BOTHDIE";
         }
 
         Piece res_atk = attacker;
         Piece res_def = defender;
         if (outcome != "OK") {
-            res_atk.type = m.attacker_type;
-            res_def.type = m.defender_type;
+            res_atk.type = r.attacker_type;
+            res_def.type = r.defender_type;
             res_atk.revealed = true;
             res_def.revealed = true;
         }

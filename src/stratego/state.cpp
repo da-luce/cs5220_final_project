@@ -14,6 +14,7 @@ GameState state::initialize(BoardConfig board_config, SetupType setup, int max_m
     state.move_count = 0;
     state.current_turn = Player::Red;
     state.move_history.clear();
+    state.result_history.clear();
     state.chase_hashes.clear();
 
     if (setup == SetupType::Random || setup == SetupType::Default) {
@@ -56,7 +57,14 @@ state::GameBinary state::serialize(GameState state) {
         append_data(state.move_history.data(), history_size * sizeof(Move));
     }
 
-    // 4. Write Chase Hashes
+    // 4. Write Result History
+    size_t result_history_size = state.result_history.size();
+    append_data(&result_history_size, sizeof(result_history_size));
+    if (result_history_size > 0) {
+        append_data(state.result_history.data(), result_history_size * sizeof(CombatResult));
+    }
+
+    // 5. Write Chase Hashes
     size_t hash_size = state.chase_hashes.size();
     append_data(&hash_size, sizeof(hash_size));
     if (hash_size > 0) {
@@ -100,7 +108,17 @@ GameState state::deserialize(const state::GameBinary& data) {
         state.move_history.clear();
     }
 
-    // 4. Read Chase Hashes
+    // 4. Read Result History
+    size_t result_history_size = 0;
+    read_data(&result_history_size, sizeof(result_history_size));
+    if (result_history_size > 0) {
+        state.result_history.resize(result_history_size);
+        read_data(state.result_history.data(), result_history_size * sizeof(CombatResult));
+    } else {
+        state.result_history.clear();
+    }
+
+    // 5. Read Chase Hashes
     size_t hash_size = 0;
     read_data(&hash_size, sizeof(hash_size));
     if (hash_size > 0) {

@@ -164,12 +164,12 @@ CombatResult Engine::execute_move(GameState& state, const Move& move) {
 
     // Check max move limit before executing
     if (state.move_count >= state.max_moves) {
-        return CombatResult::Draw;
+        return CombatOutcome::Draw;
     }
 
     // Check legality
     if (!is_legal_move(state, move)) {
-        return CombatResult::InvalidMove;
+        return CombatOutcome::InvalidMove;
     }
 
     Board& board = state.board;
@@ -183,13 +183,13 @@ CombatResult Engine::execute_move(GameState& state, const Move& move) {
     PieceType true_attacker_type = attacker.type;
     PieceType true_defender_type = defender.type;
 
-    CombatResult result;
+    CombatOutcome outcome;
 
     // 1. Moving to an empty space
     if (defender.is_empty()) {
         defender = attacker;
         attacker = Piece{PieceType::Empty, Player::None, false};
-        result = CombatResult::MovedToEmpty;
+        outcome = CombatOutcome::MovedToEmpty;
     }
     else {
         // 2. Combat Resolution
@@ -199,22 +199,22 @@ CombatResult Engine::execute_move(GameState& state, const Move& move) {
         if (defender.type == PieceType::Flag) {
             defender = attacker;
             attacker = Piece{PieceType::Empty, Player::None, false};
-            result = CombatResult::FlagCaptured;
+            outcome = CombatOutcome::FlagCaptured;
         }
         else if (defender.type == PieceType::Bomb) {
             if (attacker.type == PieceType::Miner) {
                 defender = attacker; // Miner defuses bomb
                 attacker = Piece{PieceType::Empty, Player::None, false};
-                result = CombatResult::AttackerWins;
+                outcome = CombatOutcome::AttackerWins;
             } else {
                 attacker = Piece{PieceType::Empty, Player::None, false}; // Attacker blows up
-                result = CombatResult::DefenderWins;
+                outcome = CombatOutcome::DefenderWins;
             }
         }
         else if (defender.type == PieceType::Marshal && attacker.type == PieceType::Spy) {
             defender = attacker; // Spy kills Marshal when attacking
             attacker = Piece{PieceType::Empty, Player::None, false};
-            result = CombatResult::AttackerWins;
+            outcome = CombatOutcome::AttackerWins;
         }
         else {
             // Standard Rank Comparison (Higher integer value wins)
@@ -224,45 +224,43 @@ CombatResult Engine::execute_move(GameState& state, const Move& move) {
             if (attacker_val > defender_val) {
                 defender = attacker;
                 attacker = Piece{PieceType::Empty, Player::None, false};
-                result = CombatResult::AttackerWins;
-            } 
+                outcome = CombatOutcome::AttackerWins;
+            }
             else if (attacker_val < defender_val) {
                 attacker = Piece{PieceType::Empty, Player::None, false};
-                result = CombatResult::DefenderWins;
-            } 
+                outcome = CombatOutcome::DefenderWins;
+            }
             else {
                 // Tie - Both destroyed
                 attacker = Piece{PieceType::Empty, Player::None, false};
                 defender = Piece{PieceType::Empty, Player::None, false};
-                result = CombatResult::BothDestroyed;
+                outcome = CombatOutcome::BothDestroyed;
             }
         }
     }
 
-    // Update match history. Only record piece identities that were publicly
-    // revealed this turn — a quiet move to an empty square must not leak the
-    // mover's rank into the shared history (Fog of War).
-    Move recorded = move;
-    if (result == CombatResult::MovedToEmpty) {
-        recorded.attacker_type = PieceType::Empty;
-        recorded.defender_type = PieceType::Empty;
-    } else {
-        recorded.attacker_type = true_attacker_type;
-        recorded.defender_type = true_defender_type;
+    // Build the result. Only record piece identities revealed this turn —
+    // a quiet move must not leak the mover's rank (Fog of War).
+    CombatResult result{outcome};
+    if (outcome != CombatOutcome::MovedToEmpty) {
+        result.attacker_type = true_attacker_type;
+        result.defender_type = true_defender_type;
     }
-    state.move_history.push_back(recorded);
+
+    state.move_history.push_back(move);
+    state.result_history.push_back(result);
     state.move_count++;
-    
+
     // Swap the turn to the opponent
     state.current_turn = (state.current_turn == Player::Red) ? Player::Blue : Player::Red;
-    
+
     // Log the resulting hash for repetition checking (More-Squares Rule)
     state.chase_hashes.push_back(state.board.compute_hash(state.current_turn));
 
     // Match-Level Limits — only declare draw if this move wasn't already decisive
-    if (result != CombatResult::FlagCaptured &&
+    if (outcome != CombatOutcome::FlagCaptured &&
         state.max_moves > 0 && state.move_count >= state.max_moves) {
-        return CombatResult::Draw;
+        return CombatOutcome::Draw;
     }
 
     return result;
@@ -273,9 +271,7 @@ Move Engine::get_flipped_move(const BoardConfig& config, const Move& move) {
         config.width - 1 - move.start_x,
         config.height - 1 - move.start_y,
         config.width - 1 - move.end_x,
-        config.height - 1 - move.end_y,
-        move.attacker_type,
-        move.defender_type
+        config.height - 1 - move.end_y
     };
 }
 
