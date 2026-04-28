@@ -95,6 +95,8 @@ EvalResult evaluate_vs_champion(
 
 int main(int argc, char** argv) {
     std::cout.setf(std::ios::unitbuf);
+    // Stop PyTorch's internal thread pool from fighting our OpenMP threads
+    torch::set_num_threads(1);
     auto start_time = std::chrono::high_resolution_clock::now();
 
     int rank = 0;
@@ -205,6 +207,13 @@ int main(int argc, char** argv) {
     std::vector<RolloutBuffer<torch::Tensor, int>> env_bufs(batch_size);
     std::vector<bool> needs_reset(batch_size, true);
 
+    // Pre-allocate pinned (page-locked) CPU tensors so the hot loop never allocates.
+    // Pinned memory enables async DMA transfers to GPU without CPU involvement.
+    int action_dim_size = (int)envs[0]->action_dim();
+    auto pinned = torch::TensorOptions().dtype(torch::kFloat32).pinned_memory(true);
+    torch::Tensor obs_buf  = torch::zeros({batch_size, obs_channels, H, W}, pinned);
+    torch::Tensor mask_buf = torch::zeros({batch_size, action_dim_size}, pinned);
+
     int last_sync = 0, last_eval = 0, last_update = 0;
 
     auto merge_env_buf = [&](int e) {
@@ -241,9 +250,9 @@ int main(int argc, char** argv) {
             all_masks[e] = envs[e]->get_action_mask();
         }
 
-        // Serial: handle traps and build the active list
+        // Serial: handle traps; fill pre-allocated pinned buffers for active envs
         std::vector<int> active;
-        std::vector<torch::Tensor> obs_list, mask_list;
+        active.reserve(batch_size);
 
         for (int e = 0; e < batch_size; ++e) {
             if (all_masks[e].sum().item<float>() == 0) {
@@ -262,28 +271,33 @@ int main(int argc, char** argv) {
                 games_count++;
                 continue;
             }
+            int ai = (int)active.size();
+            obs_buf[ai].copy_(obs_vec[e]);   // write directly into pinned buffer — no alloc
+            mask_buf[ai].copy_(all_masks[e]);
             active.push_back(e);
-            obs_list.push_back(obs_vec[e]);
-            mask_list.push_back(all_masks[e]);
         }
 
         if (!active.empty()) {
-            // One batched GPU forward pass
-            auto outputs = agent.act_batch(torch::stack(obs_list), torch::stack(mask_list));
+            int n = (int)active.size();
+            // Slice the pre-allocated buffers and transfer to GPU (async DMA from pinned mem)
+            auto outputs = agent.act_batch(
+                obs_buf.slice(0, 0, n).to(device, /*non_blocking=*/true),
+                mask_buf.slice(0, 0, n).to(device, /*non_blocking=*/true)
+            );
 
             // Snapshot current players before stepping (step() flips the turn)
             std::vector<stratego::Player> current_players(active.size());
-            for (int ai = 0; ai < (int)active.size(); ++ai)
+            for (int ai = 0; ai < n; ++ai)
                 current_players[ai] = envs[active[ai]]->get_current_player();
 
             // Parallel env stepping — each env mutates only its own state
             std::vector<StepResult<torch::Tensor>> step_results(active.size());
             #pragma omp parallel for schedule(static)
-            for (int ai = 0; ai < (int)active.size(); ++ai)
+            for (int ai = 0; ai < n; ++ai)
                 step_results[ai] = envs[active[ai]]->step(outputs.actions[ai]);
 
             // Serial: update per-env buffers and handle episode completion
-            for (int ai = 0; ai < (int)active.size(); ++ai) {
+            for (int ai = 0; ai < n; ++ai) {
                 int e = active[ai];
                 move_owners_vec[e].push_back(current_players[ai]);
 
@@ -291,7 +305,7 @@ int main(int argc, char** argv) {
                 env_bufs[e].actions.push_back(outputs.actions[ai]);
                 env_bufs[e].log_probs.push_back(outputs.log_probs[ai]);
                 env_bufs[e].values.push_back(outputs.values[ai]);
-                env_bufs[e].masks.push_back(mask_list[ai]);
+                env_bufs[e].masks.push_back(all_masks[e]);  // use per-env mask directly
                 env_bufs[e].rewards.push_back(0.0f);
                 env_bufs[e].is_terminals.push_back(false);
 
