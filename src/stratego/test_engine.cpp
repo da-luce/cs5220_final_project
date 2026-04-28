@@ -303,11 +303,92 @@ TEST(EngineTest, TrappedPlayerLoses) {
     state.board.place_piece(0, 0, PieceType::Marshal, Player::Red);
     state.board.place_piece(0, 1, PieceType::Bomb, Player::Blue); // Blocking
     state.board.place_piece(1, 0, PieceType::Bomb, Player::Blue); // Blocking
-    
+
     // Trap with water
     state.board.grid[state.board.index(0, 1)] = Piece{PieceType::Water, Player::None, true};
     state.board.grid[state.board.index(1, 0)] = Piece{PieceType::Water, Player::None, true};
-    
+
     auto legal_moves = Engine::get_all_legal_moves(state, Player::Red);
     EXPECT_TRUE(legal_moves.empty());
+}
+
+TEST(EngineTest, FogOfWarMoveHistory) {
+    // Quiet move to empty: mover's identity must NOT leak into shared history.
+    {
+        GameState state;
+        state.board.place_piece(0, 0, PieceType::Marshal, Player::Red);
+        ASSERT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatResult::MovedToEmpty);
+        ASSERT_EQ(state.move_history.size(), 1u);
+        EXPECT_EQ(state.move_history[0].attacker_type, PieceType::Empty);
+        EXPECT_EQ(state.move_history[0].defender_type, PieceType::Empty);
+    }
+
+    // AttackerWins: combat reveals both pieces publicly, so both ranks recorded.
+    {
+        GameState state;
+        state.board.place_piece(0, 0, PieceType::Marshal, Player::Red);
+        state.board.place_piece(0, 1, PieceType::Sergeant, Player::Blue);
+        ASSERT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatResult::AttackerWins);
+        ASSERT_EQ(state.move_history.size(), 1u);
+        EXPECT_EQ(state.move_history[0].attacker_type, PieceType::Marshal);
+        EXPECT_EQ(state.move_history[0].defender_type, PieceType::Sergeant);
+    }
+
+    // DefenderWins: the loser is also flipped face-up, so both ranks recorded.
+    {
+        GameState state;
+        state.board.place_piece(0, 0, PieceType::Sergeant, Player::Red);
+        state.board.place_piece(0, 1, PieceType::Marshal, Player::Blue);
+        ASSERT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatResult::DefenderWins);
+        ASSERT_EQ(state.move_history.size(), 1u);
+        EXPECT_EQ(state.move_history[0].attacker_type, PieceType::Sergeant);
+        EXPECT_EQ(state.move_history[0].defender_type, PieceType::Marshal);
+    }
+
+    // Tie reveals both ranks.
+    {
+        GameState state;
+        state.board.place_piece(0, 0, PieceType::Captain, Player::Red);
+        state.board.place_piece(0, 1, PieceType::Captain, Player::Blue);
+        ASSERT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatResult::BothDestroyed);
+        ASSERT_EQ(state.move_history.size(), 1u);
+        EXPECT_EQ(state.move_history[0].attacker_type, PieceType::Captain);
+        EXPECT_EQ(state.move_history[0].defender_type, PieceType::Captain);
+    }
+
+    // Flag capture reveals attacker rank and the flag.
+    {
+        GameState state;
+        state.board.place_piece(0, 0, PieceType::Scout, Player::Red);
+        state.board.place_piece(0, 1, PieceType::Flag, Player::Blue);
+        ASSERT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatResult::FlagCaptured);
+        ASSERT_EQ(state.move_history.size(), 1u);
+        EXPECT_EQ(state.move_history[0].attacker_type, PieceType::Scout);
+        EXPECT_EQ(state.move_history[0].defender_type, PieceType::Flag);
+    }
+
+    // Bomb hit by non-Miner: both pieces revealed in the resulting explosion.
+    {
+        GameState state;
+        state.board.place_piece(0, 0, PieceType::Sergeant, Player::Red);
+        state.board.place_piece(0, 1, PieceType::Bomb, Player::Blue);
+        ASSERT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatResult::DefenderWins);
+        ASSERT_EQ(state.move_history.size(), 1u);
+        EXPECT_EQ(state.move_history[0].attacker_type, PieceType::Sergeant);
+        EXPECT_EQ(state.move_history[0].defender_type, PieceType::Bomb);
+    }
+
+    // Caller-supplied piece-type fields on a quiet move must be discarded —
+    // a bot can't smuggle its own rank into history by stuffing the field.
+    {
+        GameState state;
+        state.board.place_piece(0, 0, PieceType::Marshal, Player::Red);
+        Move tampered{0, 0, 0, 1};
+        tampered.attacker_type = PieceType::Marshal;
+        tampered.defender_type = PieceType::Marshal;
+        ASSERT_EQ(Engine::execute_move(state, tampered), CombatResult::MovedToEmpty);
+        ASSERT_EQ(state.move_history.size(), 1u);
+        EXPECT_EQ(state.move_history[0].attacker_type, PieceType::Empty);
+        EXPECT_EQ(state.move_history[0].defender_type, PieceType::Empty);
+    }
 }

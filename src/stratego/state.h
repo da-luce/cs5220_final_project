@@ -9,6 +9,10 @@ namespace stratego{
 struct Move {
     int start_x, start_y;
     int end_x, end_y;
+
+    // Record the exact pieces involved so bots can be informed after combat
+    PieceType attacker_type = PieceType::Empty;
+    PieceType defender_type = PieceType::Empty;
 };
 
 struct GameState {
