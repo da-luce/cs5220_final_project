@@ -3,3 +3,12 @@ models/
 *.pth
 logs/
 *.o
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.gif
+*.pdf
+*.log
+*.tmp
+*.swp

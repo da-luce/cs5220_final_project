@@ -2,8 +2,42 @@
 #include "rl/encoding/board.h"
 #include "stratego/engine.h"
 
+#include "networks/torsos/cnn.h"
+
+#include <filesystem>
+#include <sstream>
+
 NeuralPolicy::NeuralPolicy(const std::string& model_path, const stratego::BoardConfig& config)
-    : config(config), action_encoder(config) {}
+    : config(config), action_encoder(config) {
+    namespace fs = std::filesystem;
+
+    int obs_channels = get_encoding_channels(config);
+    int action_channels = action_encoder.get_action_channels();
+    int board_size = config.height * config.width;
+
+    auto torso = std::make_shared<networks::torsos::CNNTorsoImpl>(obs_channels, 64, 0);
+    model = networks::StrategoNet(torso, action_channels * board_size, board_size);
+
+    fs::path resolved_path(model_path);
+    if (!resolved_path.is_absolute() && !fs::exists(resolved_path) && !model_path.empty() && model_path.front() != '/') {
+        fs::path maybe_absolute = fs::path("/") / resolved_path;
+        if (fs::exists(maybe_absolute)) {
+            resolved_path = maybe_absolute;
+        }
+    }
+
+    if (!fs::exists(resolved_path)) {
+        std::ostringstream message;
+        message << "Neural model file not found: " << model_path;
+        if (resolved_path != fs::path(model_path)) {
+            message << " (resolved to " << resolved_path.string() << ")";
+        }
+        throw std::invalid_argument(message.str());
+    }
+
+    torch::load(model, resolved_path.string());
+    model->eval();
+}
 
 NeuralPolicy::NeuralPolicy(networks::StrategoNet model, const stratego::BoardConfig& config)
     : model(model), config(config), action_encoder(config) {}
