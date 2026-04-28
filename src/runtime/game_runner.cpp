@@ -31,7 +31,7 @@ public:
         if (Engine::get_all_legal_moves(root_state, current).empty()) {
             last_attempted_player = current;
             last_attempted_move = Move{};
-            return CombatResult::NoLegalMoves;
+            return CombatOutcome::NoLegalMoves;
         }
 
         Policy* active_agent = (current == Player::Red) ? red_player.get() : blue_player.get();

@@ -174,12 +174,12 @@ EvalResult evaluate_vs_random(
             stratego::Move move = active->get_move(view);
             stratego::CombatResult outcome = stratego::Engine::execute_move(state, move);
 
-            if (outcome == stratego::CombatResult::FlagCaptured) {
+            if (outcome == stratego::CombatOutcome::FlagCaptured) {
                 if (is_challenger_turn) challenger_wins++;
                 else random_wins++;
                 break;
             }
-            if (outcome == stratego::CombatResult::InvalidMove) {
+            if (outcome == stratego::CombatOutcome::InvalidMove) {
                 if (is_challenger_turn) random_wins++;
                 else challenger_wins++;
                 break;

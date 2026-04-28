@@ -6,13 +6,41 @@
 
 namespace stratego{
 
+enum class CombatOutcome {
+    MovedToEmpty,
+    AttackerWins,
+    DefenderWins,
+    BothDestroyed,
+    FlagCaptured,
+    InvalidMove,
+    NoLegalMoves,
+    Draw
+};
+
+struct CombatResult {
+    CombatOutcome outcome = CombatOutcome::MovedToEmpty;
+    PieceType attacker_type = PieceType::Empty;
+    PieceType defender_type = PieceType::Empty;
+
+    CombatResult() = default;
+    CombatResult(CombatOutcome o) : outcome(o) {}
+
+    bool operator==(CombatOutcome o) const { return outcome == o; }
+    bool operator!=(CombatOutcome o) const { return outcome != o; }
+    bool operator==(const CombatResult& other) const {
+        return outcome == other.outcome
+            && attacker_type == other.attacker_type
+            && defender_type == other.defender_type;
+    }
+    bool operator!=(const CombatResult& other) const { return !(*this == other); }
+};
+
+inline bool operator==(CombatOutcome o, const CombatResult& cr) { return cr == o; }
+inline bool operator!=(CombatOutcome o, const CombatResult& cr) { return cr != o; }
+
 struct Move {
     int start_x, start_y;
     int end_x, end_y;
-
-    // Record the exact pieces involved so bots can be informed after combat
-    PieceType attacker_type = PieceType::Empty;
-    PieceType defender_type = PieceType::Empty;
 };
 
 struct GameState {
@@ -21,6 +49,7 @@ struct GameState {
     Player current_turn{Player::Red};
     int move_count{0};
     std::vector<Move> move_history;
+    std::vector<CombatResult> result_history;
     // Stores board states after moves that revealed nothing, for detecting loops
     // Used to implement the More-Squares Rule
     // https://web.archive.org/web/20110123114925/http://www.strategousa.org/wiki/index.php/2010_Computer_Stratego_World_Championship

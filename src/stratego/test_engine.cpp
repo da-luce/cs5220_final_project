@@ -90,14 +90,14 @@ TEST(EngineTest, CombatResolutions) {
     
     EXPECT_TRUE(Engine::is_legal_move(state, {0, 0, 0, 1}));
     CombatResult res1 = Engine::execute_move(state, {0, 0, 0, 1});
-    EXPECT_EQ(res1, CombatResult::AttackerWins); // Miner defuses bomb
+    EXPECT_EQ(res1, CombatOutcome::AttackerWins); // Miner defuses bomb
 
     // Next turn is Blue's
     state.board.place_piece(9, 9, PieceType::Spy, Player::Blue);
     state.board.place_piece(9, 8, PieceType::Marshal, Player::Red);
     
     CombatResult res2 = Engine::execute_move(state, {9, 9, 9, 8});
-    EXPECT_EQ(res2, CombatResult::AttackerWins); // Spy kills Marshal
+    EXPECT_EQ(res2, CombatOutcome::AttackerWins); // Spy kills Marshal
 }
 
 TEST(EngineTest, SerializeDeserialize) {
@@ -138,12 +138,12 @@ TEST(EngineTest, TwoSquaresRule) {
     state.board.place_piece(0, 0, PieceType::Scout, Player::Red);
     state.board.place_piece(9, 9, PieceType::Scout, Player::Blue);
 
-    EXPECT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatResult::MovedToEmpty); // R
-    EXPECT_EQ(Engine::execute_move(state, {9, 9, 9, 8}), CombatResult::MovedToEmpty); // B
-    EXPECT_EQ(Engine::execute_move(state, {0, 1, 0, 0}), CombatResult::MovedToEmpty); // R
-    EXPECT_EQ(Engine::execute_move(state, {9, 8, 9, 9}), CombatResult::MovedToEmpty); // B
-    EXPECT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatResult::MovedToEmpty); // R
-    EXPECT_EQ(Engine::execute_move(state, {9, 9, 9, 8}), CombatResult::MovedToEmpty); // B
+    EXPECT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatOutcome::MovedToEmpty); // R
+    EXPECT_EQ(Engine::execute_move(state, {9, 9, 9, 8}), CombatOutcome::MovedToEmpty); // B
+    EXPECT_EQ(Engine::execute_move(state, {0, 1, 0, 0}), CombatOutcome::MovedToEmpty); // R
+    EXPECT_EQ(Engine::execute_move(state, {9, 8, 9, 9}), CombatOutcome::MovedToEmpty); // B
+    EXPECT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatOutcome::MovedToEmpty); // R
+    EXPECT_EQ(Engine::execute_move(state, {9, 9, 9, 8}), CombatOutcome::MovedToEmpty); // B
     
     // R attempts to return to (0,0) again, triggering the back-and-forth loop limit
     EXPECT_FALSE(Engine::is_legal_move(state, {0, 1, 0, 0})); 
@@ -154,14 +154,14 @@ TEST(EngineTest, MoreSquaresRule) {
     state.board.place_piece(1, 1, PieceType::Scout, Player::Red);
     state.board.place_piece(2, 2, PieceType::Scout, Player::Blue);
 
-    EXPECT_EQ(Engine::execute_move(state, {1, 1, 1, 2}), CombatResult::MovedToEmpty); // R
-    EXPECT_EQ(Engine::execute_move(state, {2, 2, 2, 3}), CombatResult::MovedToEmpty); // B
-    EXPECT_EQ(Engine::execute_move(state, {1, 2, 2, 2}), CombatResult::MovedToEmpty); // R
-    EXPECT_EQ(Engine::execute_move(state, {2, 3, 1, 3}), CombatResult::MovedToEmpty); // B
-    EXPECT_EQ(Engine::execute_move(state, {2, 2, 2, 3}), CombatResult::MovedToEmpty); // R
-    EXPECT_EQ(Engine::execute_move(state, {1, 3, 1, 2}), CombatResult::MovedToEmpty); // B
-    EXPECT_EQ(Engine::execute_move(state, {2, 3, 1, 3}), CombatResult::MovedToEmpty); // R
-    EXPECT_EQ(Engine::execute_move(state, {1, 2, 2, 2}), CombatResult::MovedToEmpty); // B
+    EXPECT_EQ(Engine::execute_move(state, {1, 1, 1, 2}), CombatOutcome::MovedToEmpty); // R
+    EXPECT_EQ(Engine::execute_move(state, {2, 2, 2, 3}), CombatOutcome::MovedToEmpty); // B
+    EXPECT_EQ(Engine::execute_move(state, {1, 2, 2, 2}), CombatOutcome::MovedToEmpty); // R
+    EXPECT_EQ(Engine::execute_move(state, {2, 3, 1, 3}), CombatOutcome::MovedToEmpty); // B
+    EXPECT_EQ(Engine::execute_move(state, {2, 2, 2, 3}), CombatOutcome::MovedToEmpty); // R
+    EXPECT_EQ(Engine::execute_move(state, {1, 3, 1, 2}), CombatOutcome::MovedToEmpty); // B
+    EXPECT_EQ(Engine::execute_move(state, {2, 3, 1, 3}), CombatOutcome::MovedToEmpty); // R
+    EXPECT_EQ(Engine::execute_move(state, {1, 2, 2, 2}), CombatOutcome::MovedToEmpty); // B
     
     // R chases 1,3 -> 1,2, recreating a previously visited board state hash!
     EXPECT_FALSE(Engine::is_legal_move(state, {1, 3, 1, 2}));
@@ -178,7 +178,7 @@ TEST(EngineTest, TurnAndHistoryManagement) {
 
     // Make a move
     CombatResult res1 = Engine::execute_move(state, {0, 0, 0, 1});
-    EXPECT_EQ(res1, CombatResult::MovedToEmpty);
+    EXPECT_EQ(res1, CombatOutcome::MovedToEmpty);
 
     // State should update correctly
     EXPECT_EQ(state.current_turn, Player::Blue);
@@ -252,13 +252,13 @@ TEST(EngineTest, RedWinsByFlagCapture) {
     state.board.place_piece(1, 0, PieceType::Marshal, Player::Blue);
 
     // Red moves towards flag
-    EXPECT_EQ(Engine::execute_move(state, {0, 3, 0, 2}), CombatResult::MovedToEmpty); // Red
-    EXPECT_EQ(Engine::execute_move(state, {1, 0, 1, 1}), CombatResult::MovedToEmpty); // Blue
-    EXPECT_EQ(Engine::execute_move(state, {0, 2, 0, 1}), CombatResult::MovedToEmpty); // Red
-    EXPECT_EQ(Engine::execute_move(state, {1, 1, 1, 0}), CombatResult::MovedToEmpty); // Blue
+    EXPECT_EQ(Engine::execute_move(state, {0, 3, 0, 2}), CombatOutcome::MovedToEmpty); // Red
+    EXPECT_EQ(Engine::execute_move(state, {1, 0, 1, 1}), CombatOutcome::MovedToEmpty); // Blue
+    EXPECT_EQ(Engine::execute_move(state, {0, 2, 0, 1}), CombatOutcome::MovedToEmpty); // Red
+    EXPECT_EQ(Engine::execute_move(state, {1, 1, 1, 0}), CombatOutcome::MovedToEmpty); // Blue
     
     // Red captures flag
-    EXPECT_EQ(Engine::execute_move(state, {0, 1, 0, 0}), CombatResult::FlagCaptured); // Red wins
+    EXPECT_EQ(Engine::execute_move(state, {0, 1, 0, 0}), CombatOutcome::FlagCaptured); // Red wins
 }
 
 TEST(EngineTest, BlueWinsByElimination) {
@@ -274,20 +274,20 @@ TEST(EngineTest, BlueWinsByElimination) {
     state.board.place_piece(3, 0, PieceType::Flag, Player::Blue);
 
     // Red moves
-    EXPECT_EQ(Engine::execute_move(state, {0, 3, 0, 2}), CombatResult::MovedToEmpty); // Red
+    EXPECT_EQ(Engine::execute_move(state, {0, 3, 0, 2}), CombatOutcome::MovedToEmpty); // Red
     // Blue moves to hunt Red Lieutenant
-    EXPECT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatResult::MovedToEmpty); // Blue
-    EXPECT_EQ(Engine::execute_move(state, {0, 2, 1, 2}), CombatResult::MovedToEmpty); // Red
-    EXPECT_EQ(Engine::execute_move(state, {0, 1, 1, 1}), CombatResult::MovedToEmpty); // Blue
-    EXPECT_EQ(Engine::execute_move(state, {1, 2, 2, 2}), CombatResult::MovedToEmpty); // Red
-    EXPECT_EQ(Engine::execute_move(state, {1, 1, 2, 1}), CombatResult::MovedToEmpty); // Blue
-    EXPECT_EQ(Engine::execute_move(state, {2, 2, 2, 3}), CombatResult::MovedToEmpty); // Red
-    EXPECT_EQ(Engine::execute_move(state, {2, 1, 2, 2}), CombatResult::MovedToEmpty); // Blue
-    EXPECT_EQ(Engine::execute_move(state, {2, 3, 3, 3}), CombatResult::MovedToEmpty); // Red
+    EXPECT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatOutcome::MovedToEmpty); // Blue
+    EXPECT_EQ(Engine::execute_move(state, {0, 2, 1, 2}), CombatOutcome::MovedToEmpty); // Red
+    EXPECT_EQ(Engine::execute_move(state, {0, 1, 1, 1}), CombatOutcome::MovedToEmpty); // Blue
+    EXPECT_EQ(Engine::execute_move(state, {1, 2, 2, 2}), CombatOutcome::MovedToEmpty); // Red
+    EXPECT_EQ(Engine::execute_move(state, {1, 1, 2, 1}), CombatOutcome::MovedToEmpty); // Blue
+    EXPECT_EQ(Engine::execute_move(state, {2, 2, 2, 3}), CombatOutcome::MovedToEmpty); // Red
+    EXPECT_EQ(Engine::execute_move(state, {2, 1, 2, 2}), CombatOutcome::MovedToEmpty); // Blue
+    EXPECT_EQ(Engine::execute_move(state, {2, 3, 3, 3}), CombatOutcome::MovedToEmpty); // Red
     
     // Blue captures Red's only mobile piece
-    EXPECT_EQ(Engine::execute_move(state, {2, 2, 3, 2}), CombatResult::MovedToEmpty); // Blue
-    EXPECT_EQ(Engine::execute_move(state, {3, 3, 3, 2}), CombatResult::DefenderWins); // Red attacks Blue Marshal and dies
+    EXPECT_EQ(Engine::execute_move(state, {2, 2, 3, 2}), CombatOutcome::MovedToEmpty); // Blue
+    EXPECT_EQ(Engine::execute_move(state, {3, 3, 3, 2}), CombatOutcome::DefenderWins); // Red attacks Blue Marshal and dies
     
     // Now Red has no legal moves (only Flag left)
     auto legal_moves = Engine::get_all_legal_moves(state, Player::Red);
@@ -312,15 +312,15 @@ TEST(EngineTest, TrappedPlayerLoses) {
     EXPECT_TRUE(legal_moves.empty());
 }
 
-TEST(EngineTest, FogOfWarMoveHistory) {
-    // Quiet move to empty: mover's identity must NOT leak into shared history.
+TEST(EngineTest, FogOfWarCombatResult) {
+    // Quiet move to empty: mover's identity must NOT leak into the result.
     {
         GameState state;
         state.board.place_piece(0, 0, PieceType::Marshal, Player::Red);
-        ASSERT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatResult::MovedToEmpty);
-        ASSERT_EQ(state.move_history.size(), 1u);
-        EXPECT_EQ(state.move_history[0].attacker_type, PieceType::Empty);
-        EXPECT_EQ(state.move_history[0].defender_type, PieceType::Empty);
+        CombatResult result = Engine::execute_move(state, {0, 0, 0, 1});
+        ASSERT_EQ(result, CombatOutcome::MovedToEmpty);
+        EXPECT_EQ(result.attacker_type, PieceType::Empty);
+        EXPECT_EQ(result.defender_type, PieceType::Empty);
     }
 
     // AttackerWins: combat reveals both pieces publicly, so both ranks recorded.
@@ -328,10 +328,10 @@ TEST(EngineTest, FogOfWarMoveHistory) {
         GameState state;
         state.board.place_piece(0, 0, PieceType::Marshal, Player::Red);
         state.board.place_piece(0, 1, PieceType::Sergeant, Player::Blue);
-        ASSERT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatResult::AttackerWins);
-        ASSERT_EQ(state.move_history.size(), 1u);
-        EXPECT_EQ(state.move_history[0].attacker_type, PieceType::Marshal);
-        EXPECT_EQ(state.move_history[0].defender_type, PieceType::Sergeant);
+        CombatResult result = Engine::execute_move(state, {0, 0, 0, 1});
+        ASSERT_EQ(result, CombatOutcome::AttackerWins);
+        EXPECT_EQ(result.attacker_type, PieceType::Marshal);
+        EXPECT_EQ(result.defender_type, PieceType::Sergeant);
     }
 
     // DefenderWins: the loser is also flipped face-up, so both ranks recorded.
@@ -339,10 +339,10 @@ TEST(EngineTest, FogOfWarMoveHistory) {
         GameState state;
         state.board.place_piece(0, 0, PieceType::Sergeant, Player::Red);
         state.board.place_piece(0, 1, PieceType::Marshal, Player::Blue);
-        ASSERT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatResult::DefenderWins);
-        ASSERT_EQ(state.move_history.size(), 1u);
-        EXPECT_EQ(state.move_history[0].attacker_type, PieceType::Sergeant);
-        EXPECT_EQ(state.move_history[0].defender_type, PieceType::Marshal);
+        CombatResult result = Engine::execute_move(state, {0, 0, 0, 1});
+        ASSERT_EQ(result, CombatOutcome::DefenderWins);
+        EXPECT_EQ(result.attacker_type, PieceType::Sergeant);
+        EXPECT_EQ(result.defender_type, PieceType::Marshal);
     }
 
     // Tie reveals both ranks.
@@ -350,10 +350,10 @@ TEST(EngineTest, FogOfWarMoveHistory) {
         GameState state;
         state.board.place_piece(0, 0, PieceType::Captain, Player::Red);
         state.board.place_piece(0, 1, PieceType::Captain, Player::Blue);
-        ASSERT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatResult::BothDestroyed);
-        ASSERT_EQ(state.move_history.size(), 1u);
-        EXPECT_EQ(state.move_history[0].attacker_type, PieceType::Captain);
-        EXPECT_EQ(state.move_history[0].defender_type, PieceType::Captain);
+        CombatResult result = Engine::execute_move(state, {0, 0, 0, 1});
+        ASSERT_EQ(result, CombatOutcome::BothDestroyed);
+        EXPECT_EQ(result.attacker_type, PieceType::Captain);
+        EXPECT_EQ(result.defender_type, PieceType::Captain);
     }
 
     // Flag capture reveals attacker rank and the flag.
@@ -361,10 +361,10 @@ TEST(EngineTest, FogOfWarMoveHistory) {
         GameState state;
         state.board.place_piece(0, 0, PieceType::Scout, Player::Red);
         state.board.place_piece(0, 1, PieceType::Flag, Player::Blue);
-        ASSERT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatResult::FlagCaptured);
-        ASSERT_EQ(state.move_history.size(), 1u);
-        EXPECT_EQ(state.move_history[0].attacker_type, PieceType::Scout);
-        EXPECT_EQ(state.move_history[0].defender_type, PieceType::Flag);
+        CombatResult result = Engine::execute_move(state, {0, 0, 0, 1});
+        ASSERT_EQ(result, CombatOutcome::FlagCaptured);
+        EXPECT_EQ(result.attacker_type, PieceType::Scout);
+        EXPECT_EQ(result.defender_type, PieceType::Flag);
     }
 
     // Bomb hit by non-Miner: both pieces revealed in the resulting explosion.
@@ -372,23 +372,19 @@ TEST(EngineTest, FogOfWarMoveHistory) {
         GameState state;
         state.board.place_piece(0, 0, PieceType::Sergeant, Player::Red);
         state.board.place_piece(0, 1, PieceType::Bomb, Player::Blue);
-        ASSERT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatResult::DefenderWins);
-        ASSERT_EQ(state.move_history.size(), 1u);
-        EXPECT_EQ(state.move_history[0].attacker_type, PieceType::Sergeant);
-        EXPECT_EQ(state.move_history[0].defender_type, PieceType::Bomb);
+        CombatResult result = Engine::execute_move(state, {0, 0, 0, 1});
+        ASSERT_EQ(result, CombatOutcome::DefenderWins);
+        EXPECT_EQ(result.attacker_type, PieceType::Sergeant);
+        EXPECT_EQ(result.defender_type, PieceType::Bomb);
     }
 
-    // Caller-supplied piece-type fields on a quiet move must be discarded —
-    // a bot can't smuggle its own rank into history by stuffing the field.
+    // result_history mirrors the returned CombatResult for every move.
     {
         GameState state;
         state.board.place_piece(0, 0, PieceType::Marshal, Player::Red);
-        Move tampered{0, 0, 0, 1};
-        tampered.attacker_type = PieceType::Marshal;
-        tampered.defender_type = PieceType::Marshal;
-        ASSERT_EQ(Engine::execute_move(state, tampered), CombatResult::MovedToEmpty);
-        ASSERT_EQ(state.move_history.size(), 1u);
-        EXPECT_EQ(state.move_history[0].attacker_type, PieceType::Empty);
-        EXPECT_EQ(state.move_history[0].defender_type, PieceType::Empty);
+        state.board.place_piece(0, 1, PieceType::Sergeant, Player::Blue);
+        CombatResult result = Engine::execute_move(state, {0, 0, 0, 1});
+        ASSERT_EQ(state.result_history.size(), 1u);
+        EXPECT_EQ(state.result_history[0], result);
     }
 }
