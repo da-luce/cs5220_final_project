@@ -16,14 +16,15 @@ PPOAgent::PPOAgent(networks::StrategoNet model,
 AgentOutput<int> PPOAgent::act(const torch::Tensor& obs, const torch::Tensor& mask) {
     torch::NoGradGuard no_grad;
     model->eval();
-    
-    torch::Tensor input = obs.unsqueeze(0);
+
+    auto device = model->parameters()[0].device();
+    torch::Tensor input = obs.to(device).unsqueeze(0);
     auto [logits, value] = model->forward(input);
     
     torch::Tensor flat_logits = logits.view({1, -1});
     // Apply mask in log-space
     torch::Tensor masked_logits = flat_logits.clone();
-    masked_logits.masked_fill_(mask.unsqueeze(0) == 0, -1e9);
+    masked_logits.masked_fill_(mask.to(device).unsqueeze(0) == 0, -1e9);
     
     torch::Tensor probs = torch::softmax(masked_logits, 1);
     
@@ -47,6 +48,8 @@ void PPOAgent::update_weights(RolloutBuffer<torch::Tensor, int>& buffer) {
     if (buffer.size() == 0) return;
     model->train();
 
+    auto device = model->parameters()[0].device();
+
     // 1. Discounted Returns
     std::vector<float> returns_vec(buffer.size());
     float discounted_reward = 0;
@@ -57,12 +60,12 @@ void PPOAgent::update_weights(RolloutBuffer<torch::Tensor, int>& buffer) {
     }
 
     auto options = torch::TensorOptions().dtype(torch::kFloat32);
-    torch::Tensor states = torch::stack(buffer.observations);
-    torch::Tensor actions = torch::tensor(buffer.actions, torch::kInt64);
-    torch::Tensor old_logprobs = torch::tensor(buffer.log_probs, options);
-    torch::Tensor returns = torch::tensor(returns_vec, options);
-    torch::Tensor old_values = torch::tensor(buffer.values, options);
-    torch::Tensor masks = torch::stack(buffer.masks).view({(int)buffer.size(), -1});
+    torch::Tensor states = torch::stack(buffer.observations).to(device);
+    torch::Tensor actions = torch::tensor(buffer.actions, torch::kInt64).to(device);
+    torch::Tensor old_logprobs = torch::tensor(buffer.log_probs, options).to(device);
+    torch::Tensor returns = torch::tensor(returns_vec, options).to(device);
+    torch::Tensor old_values = torch::tensor(buffer.values, options).to(device);
+    torch::Tensor masks = torch::stack(buffer.masks).view({(int)buffer.size(), -1}).to(device);
 
     // Python Parity: Normalize returns
     if (buffer.size() > 1) {
