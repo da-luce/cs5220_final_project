@@ -24,13 +24,6 @@ private:
     char piece_to_char(PieceType pt) const;
     PieceType char_to_piece(char c) const;
 
-    // --- Coordinate Translation Helpers ---
-    int to_bot_y(int abs_y) const;
-    int to_abs_y(int bot_y) const;
-    std::string to_bot_dir(const std::string& abs_dir) const;
-    std::string to_abs_dir(const std::string& bot_dir) const;
-    // --------------------------------------
-
 public:
     PolicyUCC(const std::string& bot_path, Player me, GameState& state);
     ~PolicyUCC() override;
