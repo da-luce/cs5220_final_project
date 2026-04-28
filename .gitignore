@@ -2,3 +2,4 @@ build/
 models/
 *.pth
 logs/
+*.o

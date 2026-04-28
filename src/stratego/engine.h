@@ -13,6 +13,7 @@ enum class CombatResult {
     BothDestroyed,
     FlagCaptured,
     InvalidMove,
+    NoLegalMoves,   // Current player has no legal moves — they lose
     Draw
 };
 

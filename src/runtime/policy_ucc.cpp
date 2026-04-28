@@ -147,7 +147,9 @@ void PolicyUCC::send_board_snapshot() {
             } else if (p.owner == me_) {
                 line.push_back(piece_to_char(p.type));
             } else {
-                line.push_back(p.revealed ? piece_to_char(p.type) : '#');
+                // Per UCC spec, enemy pieces are always '#' — the bot tracks
+                // revealed identities from result lines, not the snapshot.
+                line.push_back('#');
             }
         }
         send_line(line);
@@ -247,55 +249,55 @@ Move PolicyUCC::get_move(const GameState& masked_state) {
     std::string color_str = (me_ == Player::Red) ? "RED" : "BLUE";
     std::cout << "\n=== TURN " << (masked_state.move_history.size() / 2) << ": " << color_str << " MOVES ===\n";
 
-    // 1. Process moves sequentially to flawlessly reconstruct combat
+    // 1. Process moves sequentially to flawlessly reconstruct combat.
+    // Outcomes and survivors are derived from the move's recorded
+    // attacker_type/defender_type — NOT from masked_state.board, which
+    // reflects the state AFTER all queued moves and would mis-report e.g.
+    // a DIES as BOTHDIE if the survivor was moved away in a later turn.
     while (last_processed_move_ < (int)masked_state.move_history.size()) {
         Move m = masked_state.move_history[last_processed_move_];
-        
+
         Piece attacker = local_board_.get_piece(m.start_x, m.start_y);
         Piece defender = local_board_.get_piece(m.end_x, m.end_y);
-        Piece survivor = masked_state.board.get_piece(m.end_x, m.end_y);
-        
-        std::string outcome = "OK";
-        if (!defender.is_empty()) {
-            if (defender.type == PieceType::Flag) {
-                outcome = "FLAG";
-            } else if (survivor.is_empty() || survivor.type == PieceType::Empty) {
-                outcome = "BOTHDIE";
-            } else if (survivor.owner == attacker.owner) {
-                outcome = "KILLS";
-            } else {
-                outcome = "DIES";
-            }
+
+        std::string outcome;
+        if (m.defender_type == PieceType::Empty) {
+            outcome = "OK";
+        } else if (m.defender_type == PieceType::Flag) {
+            outcome = "FLAG";
+        } else if (m.defender_type == PieceType::Bomb) {
+            outcome = (m.attacker_type == PieceType::Miner) ? "KILLS" : "DIES";
+        } else if (m.attacker_type == PieceType::Spy && m.defender_type == PieceType::Marshal) {
+            outcome = "KILLS";
+        } else {
+            int a = static_cast<int>(m.attacker_type);
+            int d = static_cast<int>(m.defender_type);
+            outcome = (a > d) ? "KILLS" : (a < d) ? "DIES" : "BOTHDIE";
         }
 
-        // --- THE BEAUTIFUL FIX: DIRECT FROM ENGINE ---
         Piece res_atk = attacker;
         Piece res_def = defender;
-
-        // If a fight happened, use the true identities recorded by the engine!
-        if (outcome != "OK" && outcome != "NO_MOVE") {
+        if (outcome != "OK") {
             res_atk.type = m.attacker_type;
             res_def.type = m.defender_type;
             res_atk.revealed = true;
             res_def.revealed = true;
         }
-        // ---------------------------------------------
 
-        // Tell the bot what happened
         send_line(make_result_line(m, res_atk, res_def, outcome));
 
-        // Update our sequential local board
-        if (outcome == "KILLS" || outcome == "OK" || outcome == "FLAG") {
-            local_board_.grid[local_board_.index(m.end_x, m.end_y)] = survivor.is_empty() ? res_atk : survivor;
-            local_board_.grid[local_board_.index(m.start_x, m.start_y)] = Piece{PieceType::Empty, Player::None, false};
+        Piece empty_sq{PieceType::Empty, Player::None, false};
+        if (outcome == "OK" || outcome == "KILLS" || outcome == "FLAG") {
+            local_board_.grid[local_board_.index(m.end_x, m.end_y)] = res_atk;
+            local_board_.grid[local_board_.index(m.start_x, m.start_y)] = empty_sq;
         } else if (outcome == "DIES") {
-            local_board_.grid[local_board_.index(m.start_x, m.start_y)] = Piece{PieceType::Empty, Player::None, false};
-            local_board_.grid[local_board_.index(m.end_x, m.end_y)] = survivor.is_empty() ? res_def : survivor;
+            local_board_.grid[local_board_.index(m.start_x, m.start_y)] = empty_sq;
+            local_board_.grid[local_board_.index(m.end_x, m.end_y)] = res_def;
         } else if (outcome == "BOTHDIE") {
-            local_board_.grid[local_board_.index(m.start_x, m.start_y)] = Piece{PieceType::Empty, Player::None, false};
-            local_board_.grid[local_board_.index(m.end_x, m.end_y)] = Piece{PieceType::Empty, Player::None, false};
+            local_board_.grid[local_board_.index(m.start_x, m.start_y)] = empty_sq;
+            local_board_.grid[local_board_.index(m.end_x, m.end_y)] = empty_sq;
         }
-        
+
         last_processed_move_++;
     }
 
