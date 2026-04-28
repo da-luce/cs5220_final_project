@@ -23,10 +23,11 @@ target_include_directories(play PRIVATE ${CMAKE_SOURCE_DIR})
 
 # Link the executable against the core game logic library (stratego_core),
 # the RL library (rl_core), LibTorch, and FTXUI.
-target_link_libraries(play PRIVATE 
-    stratego_core 
+target_link_libraries(play PRIVATE
+    stratego_core
     rl_core
     "${TORCH_LIBRARIES}"
+    ittnotify_stub
     ftxui::screen
     ftxui::dom
     ftxui::component

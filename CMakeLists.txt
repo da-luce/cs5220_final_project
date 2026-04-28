@@ -21,6 +21,21 @@ find_package(Torch REQUIRED)
 
 add_definitions(-DPROJECT_ROOT_DIR=\"${CMAKE_SOURCE_DIR}\")
 
+# Janky Perlmutter fix
+find_package(CUDAToolkit QUIET)
+if(NOT TARGET CUDA::nvToolsExt)
+    add_library(CUDA::nvToolsExt INTERFACE IMPORTED GLOBAL)
+    find_library(_nvtx_lib nvToolsExt
+        HINTS ${CUDAToolkit_LIBRARY_DIR} /usr/local/cuda/lib64 ENV CUDA_HOME PATH_SUFFIXES lib64 lib)
+    if(_nvtx_lib)
+        set_target_properties(CUDA::nvToolsExt PROPERTIES
+            INTERFACE_LINK_LIBRARIES "${_nvtx_lib}")
+    endif()
+endif()
+
+# Stub for Intel JIT profiling symbols required by libtorch_cpu.so on Perlmutter
+add_library(ittnotify_stub SHARED ittnotify_stub.cpp)
+
 # --- Subdirectories ---
 add_subdirectory(stratego)
 add_subdirectory(rl)

@@ -87,6 +87,7 @@ EvalResult evaluate_vs_champion(
 }
 
 int main(int argc, char** argv) {
+    std::cout.setf(std::ios::unitbuf);
     auto start_time = std::chrono::high_resolution_clock::now();
 
     std::string variant_str = "tiny";
