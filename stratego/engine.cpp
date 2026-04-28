@@ -245,8 +245,9 @@ CombatResult Engine::execute_move(GameState& state, const Move& move) {
     // Log the resulting hash for repetition checking (More-Squares Rule)
     state.chase_hashes.push_back(state.board.compute_hash(state.current_turn));
 
-    // Match-Level Limits
-    if (state.max_moves > 0 && state.move_count >= state.max_moves) {
+    // Match-Level Limits — only declare draw if this move wasn't already decisive
+    if (result != CombatResult::FlagCaptured &&
+        state.max_moves > 0 && state.move_count >= state.max_moves) {
         return CombatResult::Draw;
     }
 
