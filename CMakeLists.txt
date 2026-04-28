@@ -16,7 +16,10 @@ FetchContent_Declare(googletest GIT_REPOSITORY https://github.com/google/googlet
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
-# LibTorch
+# LibTorch — default to Perlmutter's PyTorch install if not set
+if(NOT DEFINED CMAKE_PREFIX_PATH)
+    set(CMAKE_PREFIX_PATH "/global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/torch/share/cmake")
+endif()
 find_package(Torch REQUIRED)
 
 add_definitions(-DPROJECT_ROOT_DIR=\"${CMAKE_SOURCE_DIR}\")
