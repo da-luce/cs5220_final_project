@@ -36,11 +36,8 @@ if(NOT TARGET CUDA::nvToolsExt)
     endif()
 endif()
 
-# NCCL — libtorch_cuda.so requires these symbols even for non-NCCL targets
-find_library(NCCL_LIB nccl
-    HINTS /global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/nvidia/nccl/lib
-          $ENV{NCCL_HOME}/lib /usr/local/cuda/lib64 $ENV{CUDA_HOME}/lib64
-    NO_DEFAULT_PATH)
+# NCCL — use the versioned .so.2 bundled with PyTorch since the system NCCL is too old
+set(NCCL_LIB "/global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2")
 
 # Stub for Intel JIT profiling symbols required by libtorch_cpu.so on Perlmutter
 add_library(ittnotify_stub SHARED ittnotify_stub.cpp)
@@ -80,6 +77,10 @@ target_link_libraries(unified_test
     ittnotify_stub
     $<$<BOOL:${NCCL_LIB}>:${NCCL_LIB}>
 )
+
+# libtorch_cuda.so references NCCL symbols that may not be present on this system.
+# The test binary never calls CUDA/NCCL code so it's safe to defer resolution to runtime.
+target_link_options(unified_test PRIVATE -Wl,--allow-shlib-undefined)
 
 # Include directories so headers like "features.h" and "board.h" are found
 target_include_directories(unified_test PRIVATE 
