@@ -18,6 +18,56 @@
 #include <string>
 #include <random>
 
+namespace {
+
+bool try_parse_game_type(const std::string& value, stratego::GameType& game_type) {
+    if (value == "classic") {
+        game_type = stratego::GameType::Classic;
+        return true;
+    }
+    if (value == "quick") {
+        game_type = stratego::GameType::Quick;
+        return true;
+    }
+    if (value == "barrage") {
+        game_type = stratego::GameType::Barrage;
+        return true;
+    }
+    if (value == "tiny") {
+        game_type = stratego::GameType::Tiny;
+        return true;
+    }
+    return false;
+}
+
+bool try_parse_setup_type(const std::string& value, stratego::state::SetupType& setup_type) {
+    if (value == "default") {
+        setup_type = stratego::state::SetupType::Default;
+        return true;
+    }
+    if (value == "probabilistic") {
+        setup_type = stratego::state::SetupType::Probabilistic;
+        return true;
+    }
+    if (value == "random") {
+        setup_type = stratego::state::SetupType::Random;
+        return true;
+    }
+    return false;
+}
+
+int print_usage(const char* program_name, const std::string& message = "") {
+    if (!message.empty()) {
+        std::cerr << message << std::endl;
+    }
+    std::cerr << "Usage: " << program_name << " <game_type> <setup_type> [num_episodes]\n";
+    std::cerr << "  game_type: classic | quick | barrage | tiny\n";
+    std::cerr << "  setup_type: random | default | probabilistic\n";
+    return 1;
+}
+
+} // namespace
+
 struct EvalResult {
     float win_rate;
     float draw_rate;
@@ -168,15 +218,33 @@ int main(int argc, char** argv) {
     const bool bench_mode = (eval_every == 0);
 
     stratego::GameType game_type;
-    if (variant_str == "classic")       game_type = stratego::GameType::Classic;
-    else if (variant_str == "quick")    game_type = stratego::GameType::Quick;
-    else if (variant_str == "barrage")  game_type = stratego::GameType::Barrage;
-    else                                game_type = stratego::GameType::Tiny;
-
     stratego::state::SetupType setup_type;
-    if (setup_str == "default")             setup_type = stratego::state::SetupType::Default;
-    else if (setup_str == "probabilistic")  setup_type = stratego::state::SetupType::Probabilistic;
-    else                                    setup_type = stratego::state::SetupType::Random;
+
+    bool variant_is_game = try_parse_game_type(variant_str, game_type);
+    bool variant_is_setup = try_parse_setup_type(variant_str, setup_type);
+    bool setup_is_game = try_parse_game_type(setup_str, game_type);
+    bool setup_is_setup = try_parse_setup_type(setup_str, setup_type);
+
+    if (argc >= 3) {
+        if (variant_is_game && setup_is_setup) {
+            // Expected order.
+        } else if (variant_is_setup && setup_is_game) {
+            std::swap(variant_str, setup_str);
+            if (!try_parse_game_type(variant_str, game_type) || !try_parse_setup_type(setup_str, setup_type)) {
+                return print_usage(argv[0], "Failed to recover from swapped CLI arguments.");
+            }
+            std::cerr << "Interpreting arguments as game_type='" << variant_str
+                      << "' and setup_type='" << setup_str << "'.\n";
+        } else {
+            return print_usage(argv[0], "Invalid training arguments.");
+        }
+    } else {
+        if (!variant_is_game) {
+            return print_usage(argv[0], "Invalid game_type: '" + variant_str + "'.");
+        }
+        setup_type = stratego::state::SetupType::Random;
+        setup_str = "random";
+    }
 
     stratego::BoardConfig config = stratego::get_config_for_game_type(game_type);
 
