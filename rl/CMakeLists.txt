@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 
 find_package(MPI REQUIRED)
+find_package(OpenMP REQUIRED)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
 # NCCL (on Perlmutter: module load nccl)
@@ -25,6 +26,7 @@ target_link_libraries(rl_core
     "${TORCH_LIBRARIES}"
     ${MPI_CXX_LIBRARIES}
     ${NCCL_LIB}
+    OpenMP::OpenMP_CXX
 )
 
 # This allows #include "networks/..." to work if rl is in include path
