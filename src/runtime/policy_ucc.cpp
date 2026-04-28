@@ -12,35 +12,6 @@
 
 namespace stratego {
 
-// --- COORDINATE TRANSLATION HELPERS ---
-// Red plays natively at the bottom. Blue thinks it plays at the bottom.
-// We must mirror the Y-axis and UP/DOWN directions ONLY for Blue.
-
-int PolicyUCC::to_bot_y(int abs_y) const {
-    if (me_ == Player::Red) return abs_y;
-    return local_board_.get_height() - 1 - abs_y;
-}
-
-int PolicyUCC::to_abs_y(int bot_y) const {
-    if (me_ == Player::Red) return bot_y;
-    return local_board_.get_height() - 1 - bot_y;
-}
-
-std::string PolicyUCC::to_bot_dir(const std::string& abs_dir) const {
-    if (me_ == Player::Red) return abs_dir;
-    if (abs_dir == "UP") return "DOWN";
-    if (abs_dir == "DOWN") return "UP";
-    return abs_dir;
-}
-
-std::string PolicyUCC::to_abs_dir(const std::string& bot_dir) const {
-    if (me_ == Player::Red) return bot_dir;
-    if (bot_dir == "UP") return "DOWN";
-    if (bot_dir == "DOWN") return "UP";
-    return bot_dir;
-}
-// --------------------------------------
-
 PolicyUCC::PolicyUCC(const std::string& bot_path, Player me, GameState& state) 
     : me_(me), bot_path_(bot_path) {
     signal(SIGPIPE, SIG_IGN);
@@ -130,16 +101,16 @@ PieceType PolicyUCC::char_to_piece(char c) const {
 }
 
 void PolicyUCC::send_board_snapshot() {
-    const int w = local_board_.get_width();
-    const int h = local_board_.get_height();
+    // Translate from Engine Native (Red bottom) to UCC Native (Red top)
+    Board ucc_board = local_board_.get_flipped_board();
+    const int w = ucc_board.get_width();
+    const int h = ucc_board.get_height();
     
-    // Iterate from the Bot's perspective (0 is Bot's Top/Enemy, 9 is Bot's Bottom/Self)
-    for (int bot_y = 0; bot_y < h; ++bot_y) {
-        int abs_y = to_abs_y(bot_y);
+    for (int y = 0; y < h; ++y) {
         std::string line;
         line.reserve(static_cast<size_t>(w));
         for (int x = 0; x < w; ++x) {
-            Piece p = local_board_.get_piece(x, abs_y);
+            Piece p = ucc_board.get_piece(x, y);
             if (p.type == PieceType::Empty) {
                 line.push_back('.');
             } else if (p.type == PieceType::Water) {
@@ -169,18 +140,20 @@ std::string PolicyUCC::make_result_line(
         extra_info = std::string(1, piece_to_char(attacker.type)) + " " + std::string(1, piece_to_char(defender.type));
     }
 
+    // Translate engine move to UCC global space
+    // Engine is Red-bottom, UCC is Red-top, so we flip the board 180 degrees
+    // get_flipped_move handles this coordinate transformation
+    Move ucc_m = Engine::get_flipped_move(local_board_.get_config(), m); 
+
     std::string abs_dir = "UP";
     int mult = 1;
-    if (m.end_x > m.start_x) { abs_dir = "RIGHT"; mult = m.end_x - m.start_x; }
-    else if (m.end_x < m.start_x) { abs_dir = "LEFT"; mult = m.start_x - m.end_x; }
-    else if (m.end_y > m.start_y) { abs_dir = "DOWN"; mult = m.end_y - m.start_y; }
-    else if (m.end_y < m.start_y) { abs_dir = "UP"; mult = m.start_y - m.end_y; }
+    if (ucc_m.end_x > ucc_m.start_x) { abs_dir = "RIGHT"; mult = ucc_m.end_x - ucc_m.start_x; }
+    else if (ucc_m.end_x < ucc_m.start_x) { abs_dir = "LEFT"; mult = ucc_m.start_x - ucc_m.end_x; }
+    else if (ucc_m.end_y > ucc_m.start_y) { abs_dir = "DOWN"; mult = ucc_m.end_y - ucc_m.start_y; }
+    else if (ucc_m.end_y < ucc_m.start_y) { abs_dir = "UP"; mult = ucc_m.start_y - ucc_m.end_y; }
 
-    int bot_start_y = to_bot_y(m.start_y);
-    std::string bot_dir = to_bot_dir(abs_dir);
-
-    std::string result = std::to_string(m.start_x) + " " + std::to_string(bot_start_y) + " " +
-                         bot_dir + " " + std::to_string(mult) + " " + outcome;
+    std::string result = std::to_string(ucc_m.start_x) + " " + std::to_string(ucc_m.start_y) + " " +
+                         abs_dir + " " + std::to_string(mult) + " " + outcome;
                          
     if (!extra_info.empty()) {
         result += " " + extra_info;
@@ -224,19 +197,29 @@ void PolicyUCC::start_process(GameState& initial_state) {
         send_line(setup_msg);
 
         const int h = initial_state.board.get_height();
+        
+        // 1. Get the current board translated into the UCC global space
+        Board ucc_board = local_board_.get_flipped_board();
+
         for (int y = 0; y < 4; y++) {
             std::string setup_line = read_line();
-            // The bot expects these 4 lines to be its bottom rows (6, 7, 8, 9)
-            int bot_y = (h - 4) + y; 
-            int abs_y = to_abs_y(bot_y);
+            
+            // 2. UCC Protocol dictates global placement:
+            // RED is always at the top (rows 0, 1, 2, 3)
+            // BLUE is always at the bottom (rows 6, 7, 8, 9)
+            int ucc_y = (me_ == Player::Red) ? y : (h - 4) + y; 
             
             for (size_t x = 0; x < setup_line.length() && x < initial_state.board.get_width(); x++) {
                 PieceType type = char_to_piece(setup_line[x]);
                 if (type != PieceType::Empty) {
-                    local_board_.grid[local_board_.index(static_cast<int>(x), abs_y)] = Piece{type, me_, false};
+                    // 3. Place pieces directly onto the UCC board
+                    ucc_board.grid[ucc_board.index(static_cast<int>(x), ucc_y)] = Piece{type, me_, false};
                 }
             }
         }
+        
+        // 4. Translate the newly populated UCC board back to the engine's native space
+        local_board_ = ucc_board.get_flipped_board();
         initial_state.board = local_board_;
 
         if (me_ == Player::Red) {
@@ -316,26 +299,25 @@ Move PolicyUCC::get_move(const GameState& masked_state) {
     
     std::string move_line = read_line();
     std::stringstream ss(move_line);
-    int bot_x, bot_y, mult = 1;
-    std::string bot_dir;
-    
+    int ucc_x, ucc_y, mult = 1;
+    std::string ucc_dir;
+
     if (move_line == "NO_MOVE" || move_line == "SURRENDER") return Move{0, 0, 0, 0};
 
-    if (!(ss >> bot_x >> bot_y >> bot_dir)) {
+    if (!(ss >> ucc_x >> ucc_y >> ucc_dir)) {
         throw std::runtime_error("Malformed move line: '" + move_line + "'");
     }
     if (!(ss >> mult)) mult = 1;
 
-    int abs_y = to_abs_y(bot_y);
-    std::string abs_dir = to_abs_dir(bot_dir);
+    // Construct the move in UCC global space
+    Move ucc_move{ucc_x, ucc_y, ucc_x, ucc_y};
+    if (ucc_dir == "UP") ucc_move.end_y -= mult;
+    else if (ucc_dir == "DOWN") ucc_move.end_y += mult;
+    else if (ucc_dir == "LEFT") ucc_move.end_x -= mult;
+    else if (ucc_dir == "RIGHT") ucc_move.end_x += mult;
 
-    Move bot_move{bot_x, abs_y, bot_x, abs_y};
-    if (abs_dir == "UP") bot_move.end_y -= mult;
-    else if (abs_dir == "DOWN") bot_move.end_y += mult;
-    else if (abs_dir == "LEFT") bot_move.end_x -= mult;
-    else if (abs_dir == "RIGHT") bot_move.end_x += mult;
-
-    return bot_move;
+    // Translate back to engine space
+    return Engine::get_flipped_move(local_board_.get_config(), ucc_move);
 }
 
 } // namespace stratego
