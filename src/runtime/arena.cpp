@@ -75,11 +75,12 @@ int main(int argc, char** argv) {
 
             if (cr == CombatResult::FlagCaptured) {
                 std::cout << "\nResult: Flag Captured!\n";
-                Player winner = (runner.get_state().current_turn == Player::Red) ? Player::Red : Player::Blue;
-                if (winner == Player::Red) {
-                    red_wins++;
-                } else {
+                // The player whose turn it is when the flag is captured is the
+                // loser, since they failed to prevent the capture on their turn.
+                if (runner.get_state().current_turn == Player::Red) {
                     blue_wins++;
+                } else {
+                    red_wins++;
                 }
             } else if (cr == CombatResult::Draw) {
                 std::cout << "\nResult: Draw!\n";
