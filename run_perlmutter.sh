@@ -29,4 +29,4 @@ BATCH=${4:-256}
 
 mkdir -p logs models
 
-srun --mpi=cray_shasta ./build/rl/train_stratego "$VARIANT" "$SETUP" "$EPISODES" "$BATCH"
+srun --mpi=pmi2 ./build/rl/train_stratego "$VARIANT" "$SETUP" "$EPISODES" "$BATCH"
