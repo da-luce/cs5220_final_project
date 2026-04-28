@@ -122,9 +122,11 @@ int main(int argc, char** argv) {
     std::string variant_str = "tiny";
     std::string setup_str = "random";
     int num_episodes = 20000;
+    int batch_size = 256;
     if (argc >= 2) variant_str = argv[1];
     if (argc >= 3) setup_str = argv[2];
     if (argc >= 4) num_episodes = std::stoi(argv[3]);
+    if (argc >= 5) batch_size = std::stoi(argv[4]);
 
     stratego::GameType game_type;
     if (variant_str == "classic") game_type = stratego::GameType::Classic;
@@ -142,7 +144,6 @@ int main(int argc, char** argv) {
     std::string model_name = variant_str + "_" + setup_str + ".pt";
     std::string model_path = std::string(PROJECT_ROOT_DIR) + "/models/" + model_name;
 
-    const int batch_size = 64;
     std::vector<std::unique_ptr<StrategoEnvironment>> envs(batch_size);
     for (auto& e : envs) e = std::make_unique<StrategoEnvironment>(config, setup_type, 60);
 
@@ -220,6 +221,8 @@ int main(int argc, char** argv) {
 
     while (games_count < local_episodes) {
         // Reset finished envs
+        // Parallel reset — each env is independent
+        #pragma omp parallel for schedule(static)
         for (int e = 0; e < batch_size; ++e) {
             if (needs_reset[e]) {
                 obs_vec[e] = envs[e]->reset();
@@ -229,13 +232,19 @@ int main(int argc, char** argv) {
             }
         }
 
-        // Collect active (non-trapped) envs for the batched forward pass
+        // Parallel mask collection — get_action_mask reads only per-env state
+        std::vector<torch::Tensor> all_masks(batch_size);
+        #pragma omp parallel for schedule(static)
+        for (int e = 0; e < batch_size; ++e) {
+            all_masks[e] = envs[e]->get_action_mask();
+        }
+
+        // Serial: handle traps and build the active list
         std::vector<int> active;
         std::vector<torch::Tensor> obs_list, mask_list;
 
         for (int e = 0; e < batch_size; ++e) {
-            torch::Tensor mask = envs[e]->get_action_mask();
-            if (mask.sum().item<float>() == 0) {
+            if (all_masks[e].sum().item<float>() == 0) {
                 // Trapped: opponent wins
                 stratego::Player winner = (envs[e]->get_current_player() == stratego::Player::Red)
                                           ? stratego::Player::Blue : stratego::Player::Red;
@@ -253,18 +262,28 @@ int main(int argc, char** argv) {
             }
             active.push_back(e);
             obs_list.push_back(obs_vec[e]);
-            mask_list.push_back(mask);
+            mask_list.push_back(all_masks[e]);
         }
 
         if (!active.empty()) {
-            // One batched forward pass for all active envs
+            // One batched GPU forward pass
             auto outputs = agent.act_batch(torch::stack(obs_list), torch::stack(mask_list));
 
+            // Snapshot current players before stepping (step() flips the turn)
+            std::vector<stratego::Player> current_players(active.size());
+            for (int ai = 0; ai < (int)active.size(); ++ai)
+                current_players[ai] = envs[active[ai]]->get_current_player();
+
+            // Parallel env stepping — each env mutates only its own state
+            std::vector<StepResult<torch::Tensor>> step_results(active.size());
+            #pragma omp parallel for schedule(static)
+            for (int ai = 0; ai < (int)active.size(); ++ai)
+                step_results[ai] = envs[active[ai]]->step(outputs.actions[ai]);
+
+            // Serial: update per-env buffers and handle episode completion
             for (int ai = 0; ai < (int)active.size(); ++ai) {
                 int e = active[ai];
-                move_owners_vec[e].push_back(envs[e]->get_current_player());
-
-                auto step_res = envs[e]->step(outputs.actions[ai]);
+                move_owners_vec[e].push_back(current_players[ai]);
 
                 env_bufs[e].observations.push_back(obs_vec[e]);
                 env_bufs[e].actions.push_back(outputs.actions[ai]);
@@ -274,10 +293,10 @@ int main(int argc, char** argv) {
                 env_bufs[e].rewards.push_back(0.0f);
                 env_bufs[e].is_terminals.push_back(false);
 
-                obs_vec[e] = step_res.observation;
+                obs_vec[e] = step_results[ai].observation;
 
-                if (step_res.terminated) {
-                    float fr = step_res.reward;
+                if (step_results[ai].terminated) {
+                    float fr = step_results[ai].reward;
                     stratego::Player last_mover = move_owners_vec[e].back();
                     for (int j = 0; j < (int)move_owners_vec[e].size(); ++j) {
                         float r = (move_owners_vec[e][j] == last_mover) ? fr : -fr;
