@@ -179,6 +179,10 @@ CombatResult Engine::execute_move(GameState& state, const Move& move) {
     Piece& attacker = board.grid[start_idx];
     Piece& defender = board.grid[end_idx];
 
+    // Capture true identities before the squares get overwritten below.
+    PieceType true_attacker_type = attacker.type;
+    PieceType true_defender_type = defender.type;
+
     CombatResult result;
 
     // 1. Moving to an empty space
@@ -235,8 +239,18 @@ CombatResult Engine::execute_move(GameState& state, const Move& move) {
         }
     }
 
-    // Update match history
-    state.move_history.push_back(move);
+    // Update match history. Only record piece identities that were publicly
+    // revealed this turn — a quiet move to an empty square must not leak the
+    // mover's rank into the shared history (Fog of War).
+    Move recorded = move;
+    if (result == CombatResult::MovedToEmpty) {
+        recorded.attacker_type = PieceType::Empty;
+        recorded.defender_type = PieceType::Empty;
+    } else {
+        recorded.attacker_type = true_attacker_type;
+        recorded.defender_type = true_defender_type;
+    }
+    state.move_history.push_back(recorded);
     state.move_count++;
     
     // Swap the turn to the opponent
@@ -258,7 +272,9 @@ Move Engine::get_flipped_move(const BoardConfig& config, const Move& move) {
         config.width - 1 - move.start_x,
         config.height - 1 - move.start_y,
         config.width - 1 - move.end_x,
-        config.height - 1 - move.end_y
+        config.height - 1 - move.end_y,
+        move.attacker_type,
+        move.defender_type
     };
 }
 

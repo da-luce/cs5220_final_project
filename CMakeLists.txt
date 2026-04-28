@@ -26,6 +26,24 @@ add_subdirectory(src/stratego)
 add_subdirectory(src/rl)
 add_subdirectory(src/ui)
 
+# --- The Arena Binary ---
+add_executable(arena
+    src/runtime/arena.cpp
+    src/runtime/policy_ucc.cpp
+)
+
+target_link_libraries(arena 
+    PRIVATE 
+    stratego_core
+    rl_core
+    "${TORCH_LIBRARIES}"
+    nlohmann_json::nlohmann_json
+)
+
+target_include_directories(arena PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
 # --- The Unified Test Binary ---
 enable_testing()
 
