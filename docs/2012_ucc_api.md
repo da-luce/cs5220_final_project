@@ -4,6 +4,20 @@ In 2012, the The University Computer Club Inc. of the University of Western Aust
 
 An important note on coordinates:
 
+The UCC 2012 Stratego bots use an absolute global coordinate system. The Game Manager does not translate or flip the board based on which side you are playing. Your bot must be aware of its assigned color and handle its own spatial logic accordingly.
+
+When programming your bot, adhere strictly to these absolute rules:
+
+-  **The Origin:** The coordinate (0,0) is always the absolute top-left corner of the board. The X-axis ranges from 0 to 9 (left to right), and the Y-axis ranges from 0 to 9 (top to bottom).
+- **The Starting Zones:** 
+  - `RED` always starts at the top of the board. It must place its pieces on Rows 0, 1, 2, and 3
+  - `BLUE` always starts at the bottom of the board. It must place its pieces on Rows 6, 7, 8, and 9
+- **Movement Directions:** Directions are tied to the global grid, not your bot's forward-facing perspective.
+  - `UP` always decreases the Y-coordinate (moving towards Row 0 / Red's side).
+  - `DOWN` always increases the Y-coordinate (moving towards Row 9 / Blue's side).
+
+----
+
 Unlike many modern engines, the UCC 2012 Stratego bots do not use an absolute global coordinate system. Instead, they operate on a strictly relative perspective. Every bot is hardcoded to believe it is playing from the bottom of the board, regardless of its actual assigned color.
 
 When programming your bot, adhere strictly to these relative rules:
