@@ -36,6 +36,11 @@ if(NOT TARGET CUDA::nvToolsExt)
     endif()
 endif()
 
+# NCCL — libtorch_cuda.so requires these symbols even for non-NCCL targets
+find_library(NCCL_LIB nccl
+    HINTS $ENV{NCCL_HOME}/lib /usr/local/cuda/lib64 $ENV{CUDA_HOME}/lib64
+          /global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/nvidia/nccl/lib)
+
 # Stub for Intel JIT profiling symbols required by libtorch_cpu.so on Perlmutter
 add_library(ittnotify_stub SHARED ittnotify_stub.cpp)
 
@@ -72,6 +77,7 @@ target_link_libraries(unified_test
     "${TORCH_LIBRARIES}"
     nlohmann_json::nlohmann_json
     ittnotify_stub
+    $<$<BOOL:${NCCL_LIB}>:${NCCL_LIB}>
 )
 
 # Include directories so headers like "features.h" and "board.h" are found
