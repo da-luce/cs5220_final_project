@@ -84,10 +84,24 @@ int main(int argc, char** argv) {
             } else if (cr == CombatResult::Draw) {
                 std::cout << "\nResult: Draw!\n";
                 draws++;
+            } else if (cr == CombatResult::NoLegalMoves) {
+                Player loser = runner.get_last_attempted_player();
+                const char* who = (loser == Player::Red) ? "RED" : "BLUE";
+                std::cout << "\nResult: " << who << " has no legal moves — loses.\n";
+                if (loser == Player::Red) {
+                    blue_wins++;
+                } else {
+                    red_wins++;
+                }
             } else if (cr == CombatResult::InvalidMove) {
-                Move last = runner.get_state().move_history.back();
-                std::cout << "\nResult: Invalid Move! (" << last.start_x << "," << last.start_y << " -> " << last.end_x << "," << last.end_y << ")\n";
-                Player loser = runner.get_state().current_turn;
+                // Invalid moves are NOT added to move_history; pull the
+                // attempted move directly from the runner.
+                Move last = runner.get_last_attempted_move();
+                Player loser = runner.get_last_attempted_player();
+                const char* who = (loser == Player::Red) ? "RED" : "BLUE";
+                std::cout << "\nResult: Invalid Move by " << who << "! ("
+                          << last.start_x << "," << last.start_y << " -> "
+                          << last.end_x << "," << last.end_y << ")\n";
                 if (loser == Player::Red) {
                     blue_wins++;
                 } else {
