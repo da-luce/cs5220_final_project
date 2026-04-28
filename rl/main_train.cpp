@@ -108,15 +108,14 @@ int main(int argc, char** argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
     cudaSetDevice(rank);
     if (rank == 0) std::cout << "[NCCL+MPI enabled] MPI world_size=" << world_size << std::endl;
-#else
-    std::cout << "[CPU-only, no MPI/NCCL] Compiled without USE_NCCL" << std::endl;
-#endif
 
     ncclUniqueId nccl_id;
     if (rank == 0) ncclGetUniqueId(&nccl_id);
     MPI_Bcast(&nccl_id, sizeof(nccl_id), MPI_BYTE, 0, MPI_COMM_WORLD);
     ncclComm_t comm;
     ncclCommInitRank(&comm, world_size, nccl_id, rank);
+#else
+    std::cout << "[CPU-only, no MPI/NCCL] Compiled without USE_NCCL" << std::endl;
 #endif
 
     torch::Device device = torch::kCPU;
