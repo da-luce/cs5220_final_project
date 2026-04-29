@@ -50,6 +50,12 @@ cmake ..
 make
 ```
 
+> **macOS (Apple Clang):** OpenMP is not bundled with Apple's compiler. Install the runtime via Homebrew and expose it to CMake before configuring:
+> ```shell
+> brew install libomp
+> OpenMP_ROOT=$(brew --prefix libomp) cmake ..
+> ```
+
 ### Run Tests
 
 ```shell
@@ -66,6 +72,28 @@ make
 
 ```shell
 ./rl/train_stratego <game_type> <setup_type> <num_episodes>
+```
+
+## Arena
+
+The arena runs head-to-head matches between two agents. Games are embarrassingly parallel — each is fully independent — so the arena uses OpenMP to simulate many games concurrently.
+
+```shell
+./build/arena --red <spec> --blue <spec> --games <N> [--threads <T>]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--red` | `random` | Red agent (`random`, `neural:<path>`, `ucc:<path>`) |
+| `--blue` | `random` | Blue agent (same specs) |
+| `--games` | `1` | Number of games to simulate |
+| `--threads` | all cores | Number of OpenMP threads |
+
+The binary prints whether OpenMP is active and how many threads are in use at startup, so there is no silent fallback to serial execution. The final summary includes total wall-clock time and throughput (games/s).
+
+**Example:**
+```shell
+./build/arena --red neural:checkpoints/red.pt --blue random --games 1000 --threads 8
 ```
 
 ## Resources

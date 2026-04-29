@@ -19,6 +19,17 @@ FetchContent_MakeAvailable(googletest)
 # LibTorch
 find_package(Torch REQUIRED)
 
+# OpenMP — Apple Clang doesn't bundle it; point CMake at Homebrew's libomp
+if(APPLE)
+    execute_process(COMMAND brew --prefix libomp
+        OUTPUT_VARIABLE LIBOMP_PREFIX
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    set(OpenMP_CXX_FLAGS "-Xpreprocessor -fopenmp -I${LIBOMP_PREFIX}/include")
+    set(OpenMP_CXX_LIB_NAMES "omp")
+    set(OpenMP_omp_LIBRARY "${LIBOMP_PREFIX}/lib/libomp.dylib")
+endif()
+find_package(OpenMP REQUIRED)
+
 add_definitions(-DPROJECT_ROOT_DIR=\"${CMAKE_SOURCE_DIR}\")
 
 # --- Subdirectories ---
@@ -32,12 +43,13 @@ add_executable(arena
     src/runtime/policy_ucc.cpp
 )
 
-target_link_libraries(arena 
-    PRIVATE 
+target_link_libraries(arena
+    PRIVATE
     stratego_core
     rl_core
     "${TORCH_LIBRARIES}"
     nlohmann_json::nlohmann_json
+    OpenMP::OpenMP_CXX
 )
 
 target_include_directories(arena PRIVATE 
