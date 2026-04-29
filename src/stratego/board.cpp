@@ -192,4 +192,13 @@ GameHash Board::compute_hash(Player current_turn) const {
     return hash;
 }
 
+GameHash Board::compute_position_hash(Player current_turn) const {
+    GameHash hash = 17;
+    hash = hash * 31 + static_cast<GameHash>(current_turn);
+    for (const auto& piece : grid) {
+        hash = hash * 31 + static_cast<GameHash>(piece.owner);
+    }
+    return hash;
+}
+
 } // namespace stratego

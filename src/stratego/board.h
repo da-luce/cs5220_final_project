@@ -113,6 +113,9 @@ public:
     [[nodiscard]] const BoardConfig& get_config() const { return config; }
     [[nodiscard]] Piece get_piece(int x, int y) const;
     [[nodiscard]] GameHash compute_hash(Player current_turn) const;
+    // Hash using only piece positions and ownership — not rank/type.
+    // Used for the chase rule so it works correctly on masked boards.
+    [[nodiscard]] GameHash compute_position_hash(Player current_turn) const;
 };
 
 } // namespace stratego
