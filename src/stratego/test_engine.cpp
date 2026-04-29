@@ -133,6 +133,39 @@ TEST(EngineTest, SerializeDeserialize) {
     }
 }
 
+// Regression: chase rule must fire on a masked view, not just the real state.
+// Before the fix, compute_hash included piece.type so Hidden pieces produced
+// hashes that never matched chase_hashes (built from real piece types), silently
+// disabling the chase rule for any policy that computed legal moves from the view.
+TEST(EngineTest, ChaseRuleWorksOnMaskedView) {
+    GameState state;
+    // Red Scout will bounce; Blue Sergeant sits far away so masking changes the hash.
+    state.board.place_piece(0, 0, PieceType::Scout, Player::Red);
+    state.board.place_piece(9, 9, PieceType::Sergeant, Player::Blue);
+
+    // Build up the two-squares pattern (Red bounces, Blue idles)
+    EXPECT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatOutcome::MovedToEmpty); // R
+    EXPECT_EQ(Engine::execute_move(state, {9, 9, 9, 8}), CombatOutcome::MovedToEmpty); // B
+    EXPECT_EQ(Engine::execute_move(state, {0, 1, 0, 0}), CombatOutcome::MovedToEmpty); // R
+    EXPECT_EQ(Engine::execute_move(state, {9, 8, 9, 9}), CombatOutcome::MovedToEmpty); // B
+    EXPECT_EQ(Engine::execute_move(state, {0, 0, 0, 1}), CombatOutcome::MovedToEmpty); // R
+    EXPECT_EQ(Engine::execute_move(state, {9, 9, 9, 8}), CombatOutcome::MovedToEmpty); // B
+
+    // Sanity: chase rule fires on the real state
+    EXPECT_FALSE(Engine::is_legal_move(state, {0, 1, 0, 0}));
+
+    // Same check on the masked view (Blue's Sergeant appears as Hidden to Red)
+    GameState masked = state::get_masked_view(state, Player::Red);
+    EXPECT_FALSE(Engine::is_legal_move(masked, {0, 1, 0, 0}));
+
+    // get_all_legal_moves on the masked view must also omit the illegal move
+    auto moves = Engine::get_all_legal_moves(masked, Player::Red);
+    bool found = false;
+    for (const auto& m : moves)
+        if (m.start_x == 0 && m.start_y == 1 && m.end_x == 0 && m.end_y == 0) found = true;
+    EXPECT_FALSE(found);
+}
+
 TEST(EngineTest, TwoSquaresRule) {
     GameState state;
     state.board.place_piece(0, 0, PieceType::Scout, Player::Red);
