@@ -86,7 +86,7 @@ bool Engine::is_legal_move(
         // Calculate the hash of the resulting board. 
         // Note: The resulting state becomes the opponent's turn.
         Player next_player = (current_player == Player::Red) ? Player::Blue : Player::Red;
-        GameHash new_state = temp.compute_hash(next_player);
+        GameHash new_state = temp.compute_position_hash(next_player);
 
         if (std::find(chase_hashes.begin(), chase_hashes.end(), new_state) != chase_hashes.end()) {
             return false;
@@ -255,7 +255,7 @@ CombatResult Engine::execute_move(GameState& state, const Move& move) {
     state.current_turn = (state.current_turn == Player::Red) ? Player::Blue : Player::Red;
 
     // Log the resulting hash for repetition checking (More-Squares Rule)
-    state.chase_hashes.push_back(state.board.compute_hash(state.current_turn));
+    state.chase_hashes.push_back(state.board.compute_position_hash(state.current_turn));
 
     // Match-Level Limits
     if (state.max_moves > 0 && state.move_count >= state.max_moves) {
