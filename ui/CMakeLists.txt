@@ -27,7 +27,7 @@ target_link_libraries(play PRIVATE
     stratego_core
     rl_core
     "${TORCH_LIBRARIES}"
-    ittnotify_stub
+    $<$<BOOL:${BUILD_ITT_STUB}>:ittnotify_stub>
     ftxui::screen
     ftxui::dom
     ftxui::component
