@@ -210,12 +210,13 @@ int main(int argc, char** argv) {
     std::vector<RolloutBuffer<torch::Tensor, int>> env_bufs(batch_size);
     std::vector<bool> needs_reset(batch_size, true);
 
-    // Pre-allocate pinned (page-locked) CPU tensors so the hot loop never allocates.
-    // Pinned memory enables async DMA transfers to GPU without CPU involvement.
+    // Pre-allocate CPU tensors so the hot loop never allocates.
+    // Pinned (page-locked) memory enables async DMA to GPU, but is CUDA-only — skip on CPU/MPS.
     int action_dim_size = (int)envs[0]->action_dim();
-    auto pinned = torch::TensorOptions().dtype(torch::kFloat32).pinned_memory(true);
-    torch::Tensor obs_buf  = torch::zeros({batch_size, obs_channels, H, W}, pinned);
-    torch::Tensor mask_buf = torch::zeros({batch_size, action_dim_size}, pinned);
+    auto buf_opts = torch::TensorOptions().dtype(torch::kFloat32)
+                        .pinned_memory(torch::cuda::is_available());
+    torch::Tensor obs_buf  = torch::zeros({batch_size, obs_channels, H, W}, buf_opts);
+    torch::Tensor mask_buf = torch::zeros({batch_size, action_dim_size}, buf_opts);
 
     int last_sync = 0, last_eval = 0, last_update = 0;
 
