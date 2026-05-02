@@ -1,8 +1,9 @@
 BUILD_DIR  ?= build
 BUILD_TYPE ?= Release
 
-PERLMUTTER_TORCH_CMAKE := /global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/torch/share/cmake
-PERLMUTTER_NCCL_LIB    := /global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2
+PERLMUTTER_TORCH_CMAKE  := /global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/torch/share/cmake
+PERLMUTTER_NCCL_LIB     := /global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2
+PERLMUTTER_NCCL_INCLUDE := /global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/nvidia/nccl/include
 
 .PHONY: configure configure_perlmutter build clean
 
@@ -28,6 +29,7 @@ configure_perlmutter:
 	cmake -S . -B $(BUILD_DIR) \
 		-DCMAKE_PREFIX_PATH=$(PERLMUTTER_TORCH_CMAKE) \
 		-DNCCL_LIB=$(PERLMUTTER_NCCL_LIB) \
+		-DNCCL_INCLUDE=$(PERLMUTTER_NCCL_INCLUDE) \
 		-DBUILD_ITT_STUB=ON \
 		-DCMAKE_BUILD_TYPE=$(BUILD_TYPE)
 

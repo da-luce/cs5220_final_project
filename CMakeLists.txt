@@ -9,7 +9,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Path to the NCCL shared library. Set when the system NCCL is absent or too old and
 # you need to point at one bundled elsewhere (e.g. inside a PyTorch wheel).
 # Leave empty to skip NCCL linking entirely.
-set(NCCL_LIB "" CACHE FILEPATH "Path to libnccl.so (leave empty to skip)")
+set(NCCL_LIB     "" CACHE FILEPATH "Path to libnccl.so (leave empty to skip)")
+set(NCCL_INCLUDE "" CACHE PATH     "Path to NCCL include directory (leave empty to skip)")
 
 # Build the ittnotify no-op stub. Only needed when linking against a libtorch_cpu.so
 # that was compiled with Intel VTune support and the VTune runtime is not installed.
