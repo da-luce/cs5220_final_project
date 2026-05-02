@@ -1,7 +1,18 @@
 cmake_minimum_required(VERSION 3.14)
 
 find_package(MPI)
+
+# Apple Clang doesn't bundle OpenMP; point CMake at Homebrew's libomp if present.
+if(APPLE)
+    execute_process(COMMAND brew --prefix libomp
+        OUTPUT_VARIABLE LIBOMP_PREFIX
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    set(OpenMP_CXX_FLAGS "-Xpreprocessor -fopenmp -I${LIBOMP_PREFIX}/include")
+    set(OpenMP_CXX_LIB_NAMES "omp")
+    set(OpenMP_omp_LIBRARY "${LIBOMP_PREFIX}/lib/libomp.dylib")
+endif()
 find_package(OpenMP REQUIRED)
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
 add_library(rl_core
