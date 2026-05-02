@@ -19,6 +19,7 @@ add_library(rl_core
     encoding/board.cpp
     encoding/actions.cpp
     environment/stratego_env.cpp
+    environment/batched_stratego_env.cpp
     agent/ppo_agent.cpp
     networks/model.cpp
     networks/torsos/cnn.cpp
