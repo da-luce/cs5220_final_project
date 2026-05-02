@@ -7,6 +7,22 @@ PERLMUTTER_NCCL_INCLUDE := /global/common/software/nersc9/pytorch/2.8.0/lib/pyth
 
 .PHONY: configure configure_perlmutter build clean
 
+# Determine the number of cores for parallel build
+ifeq ($(OS),Windows_NT)
+    JOBS := $(NUMBER_OF_PROCESSORS)
+else
+    UNAME_S := $(shell uname -s)
+    ifeq ($(UNAME_S),Linux)
+        JOBS := $(shell nproc)
+    endif
+    ifeq ($(UNAME_S),Darwin)
+        JOBS := $(shell sysctl -n hw.ncpu)
+    endif
+endif
+
+# Fallback to 1 if detection fails
+JOBS ?= 1
+
 # Generic configure — let cmake find compilers on its own.
 # Override torch path if needed: make configure TORCH_CMAKE=<path>
 configure:
@@ -34,7 +50,7 @@ configure_perlmutter:
 		-DCMAKE_BUILD_TYPE=$(BUILD_TYPE)
 
 build:
-	cmake --build $(BUILD_DIR) --target train_stratego -j$(shell nproc)
+	cmake --build $(BUILD_DIR) -j$(JOBS)
 
 clean:
 	rm -rf $(BUILD_DIR)
