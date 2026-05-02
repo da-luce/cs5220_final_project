@@ -43,12 +43,32 @@ When playing Classic, the starting setup is sampled from a Constrained Weighted 
 
 ## Building
 
+### Local (CPU, no GPU)
+
 ```shell
-mkdir build
-cd build
-cmake ..
-make
+make configure   # override torch path if needed: make configure TORCH_CMAKE=<path>
+make build
 ```
+
+### Perlmutter (NERSC)
+
+`module` modifies your shell environment so it must be run manually before building:
+
+```shell
+module swap PrgEnv-cray PrgEnv-gnu
+module load gcc/12.2.0
+module load cray-mpich
+```
+
+Then configure and build using the Perlmutter profile:
+
+```shell
+make configure_perlmutter
+make build
+```
+
+`configure_perlmutter` sets the NERSC PyTorch and NCCL paths and enables `BUILD_ITT_STUB`
+(see [perlmutter/ittnotify_stub.cpp](perlmutter/ittnotify_stub.cpp) for why that's needed).
 
 ### Run Tests
 
