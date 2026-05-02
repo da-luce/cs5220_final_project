@@ -36,6 +36,7 @@ add_definitions(-DPROJECT_ROOT_DIR=\"${CMAKE_SOURCE_DIR}\")
 add_subdirectory(src/stratego)
 add_subdirectory(src/rl)
 add_subdirectory(src/ui)
+add_subdirectory(src/cuda)  # no-op when nvcc isn't found
 
 # --- The Arena Binary ---
 add_executable(arena
