@@ -27,8 +27,15 @@ target_link_libraries(play PRIVATE
     stratego_core
     rl_core
     "${TORCH_LIBRARIES}"
-    ittnotify_stub
+    $<$<BOOL:${BUILD_ITT_STUB}>:ittnotify_stub>
     ftxui::screen
     ftxui::dom
     ftxui::component
 )
+
+# libtorch_cuda.so references NCCL symbols that may not be present in the system NCCL.
+if(APPLE)
+    target_link_options(play PRIVATE -Wl,-undefined,dynamic_lookup)
+else()
+    target_link_options(play PRIVATE -Wl,--allow-shlib-undefined)
+endif()

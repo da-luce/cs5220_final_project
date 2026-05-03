@@ -4,6 +4,19 @@ project(StrategoProject CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# --- Build options ---
+
+# Path to the NCCL shared library. Set when the system NCCL is absent or too old and
+# you need to point at one bundled elsewhere (e.g. inside a PyTorch wheel).
+# Leave empty to skip NCCL linking entirely.
+set(NCCL_LIB     "" CACHE FILEPATH "Path to libnccl.so (leave empty to skip)")
+set(NCCL_INCLUDE "" CACHE PATH     "Path to NCCL include directory (leave empty to skip)")
+
+# Build the ittnotify no-op stub. Only needed when linking against a libtorch_cpu.so
+# that was compiled with Intel VTune support and the VTune runtime is not installed.
+# See ittnotify_stub.cpp for details.
+option(BUILD_ITT_STUB "Build the ittnotify no-op stub library" OFF)
+
 # --- Dependencies ---
 include(FetchContent)
 
@@ -16,15 +29,14 @@ FetchContent_Declare(googletest GIT_REPOSITORY https://github.com/google/googlet
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
-# LibTorch — default to Perlmutter's PyTorch install if not set
-if(NOT DEFINED CMAKE_PREFIX_PATH)
-    set(CMAKE_PREFIX_PATH "/global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/torch/share/cmake")
-endif()
+# LibTorch — set CMAKE_PREFIX_PATH to the torch cmake directory before invoking cmake.
+# See README for example commands for Perlmutter and local builds.
 find_package(Torch REQUIRED)
 
 add_definitions(-DPROJECT_ROOT_DIR=\"${CMAKE_SOURCE_DIR}\")
 
-# Janky Perlmutter fix
+# If the CUDA toolkit is present but nvToolsExt isn't exported as a CMake target,
+# create a minimal INTERFACE target so libtorch can link against it.
 find_package(CUDAToolkit QUIET)
 if(NOT TARGET CUDA::nvToolsExt)
     add_library(CUDA::nvToolsExt INTERFACE IMPORTED GLOBAL)
@@ -36,11 +48,9 @@ if(NOT TARGET CUDA::nvToolsExt)
     endif()
 endif()
 
-# NCCL — use the versioned .so.2 bundled with PyTorch since the system NCCL is too old
-set(NCCL_LIB "/global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2")
-
-# Stub for Intel JIT profiling symbols required by libtorch_cpu.so on Perlmutter
-add_library(ittnotify_stub SHARED ittnotify_stub.cpp)
+if(BUILD_ITT_STUB)
+    add_library(ittnotify_stub SHARED perlmutter/ittnotify_stub.cpp)
+endif()
 
 # --- Subdirectories ---
 add_subdirectory(stratego)
@@ -74,13 +84,19 @@ target_link_libraries(unified_test
     GTest::gtest_main
     "${TORCH_LIBRARIES}"
     nlohmann_json::nlohmann_json
-    ittnotify_stub
+    $<$<BOOL:${BUILD_ITT_STUB}>:ittnotify_stub>
     $<$<BOOL:${NCCL_LIB}>:${NCCL_LIB}>
 )
 
 # libtorch_cuda.so references NCCL symbols that may not be present on this system.
 # The test binary never calls CUDA/NCCL code so it's safe to defer resolution to runtime.
-target_link_options(unified_test PRIVATE -Wl,--allow-shlib-undefined)
+if(APPLE)
+    # macOS equivalent: allows undefined symbols to be resolved at runtime
+    target_link_options(unified_test PRIVATE -Wl,-undefined,dynamic_lookup)
+else()
+    # Linux/GNU linker
+    target_link_options(unified_test PRIVATE -Wl,--allow-shlib-undefined)
+endif()
 
 # Include directories so headers like "features.h" and "board.h" are found
 target_include_directories(unified_test PRIVATE 

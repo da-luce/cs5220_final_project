@@ -1,18 +1,25 @@
 cmake_minimum_required(VERSION 3.14)
 
-find_package(MPI REQUIRED)
+find_package(MPI)
+
+# Apple Clang doesn't bundle OpenMP; point CMake at Homebrew's libomp if present.
+if(APPLE)
+    execute_process(COMMAND brew --prefix libomp
+        OUTPUT_VARIABLE LIBOMP_PREFIX
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    set(OpenMP_CXX_FLAGS "-Xpreprocessor -fopenmp -I${LIBOMP_PREFIX}/include")
+    set(OpenMP_CXX_LIB_NAMES "omp")
+    set(OpenMP_omp_LIBRARY "${LIBOMP_PREFIX}/lib/libomp.dylib")
+endif()
 find_package(OpenMP REQUIRED)
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
-# NCCL — use the versioned .so bundled with PyTorch; system NCCL is too old
-set(NCCL_LIB "/global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2")
-set(NCCL_INCLUDE "/global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/nvidia/nccl/include")
-
-# Define RL library
 add_library(rl_core
     encoding/board.cpp
     encoding/actions.cpp
     environment/stratego_env.cpp
+    environment/batched_stratego_env.cpp
     agent/ppo_agent.cpp
     networks/model.cpp
     networks/torsos/cnn.cpp
@@ -24,22 +31,35 @@ target_link_libraries(rl_core
     PRIVATE
     stratego_core
     "${TORCH_LIBRARIES}"
-    ${MPI_CXX_LIBRARIES}
-    ${NCCL_LIB}
+    $<$<BOOL:${MPI_FOUND}>:${MPI_CXX_LIBRARIES}>
+    $<$<BOOL:${NCCL_LIB}>:${NCCL_LIB}>
     OpenMP::OpenMP_CXX
 )
 
-# This allows #include "networks/..." to work if rl is in include path
 target_include_directories(rl_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${MPI_CXX_INCLUDE_DIRS}
-    ${NCCL_INCLUDE}
+    $<$<BOOL:${MPI_FOUND}>:${MPI_CXX_INCLUDE_DIRS}>
+    $<$<BOOL:${NCCL_INCLUDE}>:${NCCL_INCLUDE}>
 )
 
-# Training executable
 add_executable(train_stratego main_train.cpp)
-target_link_libraries(train_stratego PRIVATE rl_core ittnotify_stub ${MPI_CXX_LIBRARIES} ${NCCL_LIB})
-if(NCCL_LIB AND NCCL_INCLUDE)
+target_link_libraries(train_stratego
+    PRIVATE
+    rl_core
+    $<$<BOOL:${BUILD_ITT_STUB}>:ittnotify_stub>
+    $<$<BOOL:${MPI_FOUND}>:${MPI_CXX_LIBRARIES}>
+    $<$<BOOL:${NCCL_LIB}>:${NCCL_LIB}>
+)
+
+# libtorch_cuda.so references NCCL symbols (ncclCommWindowRegister, etc.) that may
+# not be present in the system NCCL. Defer resolution to the runtime dynamic linker.
+if(APPLE)
+    target_link_options(train_stratego PRIVATE -Wl,-undefined,dynamic_lookup)
+else()
+    target_link_options(train_stratego PRIVATE -Wl,--allow-shlib-undefined)
+endif()
+
+if(NCCL_LIB)
     target_compile_definitions(train_stratego PRIVATE USE_NCCL)
 endif()
