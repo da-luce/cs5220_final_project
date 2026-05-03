@@ -75,9 +75,6 @@ inline void sync_weights(networks::StrategoNet& net, const DistributedContext& c
 #ifdef USE_NCCL
     if (ctx.world_size <= 1) return;
 
-    // Test
-    // c10::cuda::getCurrentCUDAStream().synchronize();
-
     torch::NoGradGuard no_grad;
     // Run NCCL on PyTorch's current CUDA stream so the caching allocator is aware
     // of the work and subsequent tensor ops are correctly ordered after it.

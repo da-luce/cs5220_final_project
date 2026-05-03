@@ -8,6 +8,10 @@
 #include "rl/encoding/board.h"
 #include "rl/distributed.h"
 #include <iostream>
+#include <iomanip>
+#include <fstream>
+#include <ctime>
+#include <cmath>
 #include <memory>
 #include <algorithm>
 #include <chrono>
@@ -77,8 +81,6 @@ EvalResult evaluate_vs_champion(
             }
         }
     }
-
-    std::cout << "  [Eval Stats] Challenger: " << challenger_wins << " | Champion: " << champion_wins << " | Draws: " << draws << std::endl;
 
     challenger->train();
     return {(float)challenger_wins / num_games, (float)draws / num_games};
@@ -154,16 +156,62 @@ int main(int argc, char** argv) {
     // TODO: add warmup for stability at the start of training, especially for larger batch sizes
     int effective_batch_size = batch_size * world_size;
     double lr = (effective_batch_size / 256.0) * 1e-4;
+    const double gamma    = 0.99;
+    const int    k_epochs = 1;
+    const double eps_clip = 0.2;
 
-    PPOAgent agent(challenger, lr, 0.99, 1, 0.2);
+    PPOAgent agent(challenger, lr, gamma, k_epochs, eps_clip);
 
     RolloutBuffer<torch::Tensor, int> buffer;
 
     int local_episodes = num_episodes / world_size;
     int sync_freq = batch_size;
+    const int eval_every_batches = 2;  // ~512 games per eval at sync_freq=256
 
+    std::ofstream metrics_log;
+    std::string metrics_path;
     if (rank == 0) {
-        std::cout << "Starting Self-Play Training (Challenger vs Champion) for "
+        std::cout << "\n[Build Info]\n"
+                  << "Ranks: " << world_size
+                  << " | Per-Rank Batch: " << batch_size
+                  << " | Effective Batch: " << effective_batch_size << "\n"
+                  << "Learning Rate: " << std::scientific << std::setprecision(2) << lr
+                  << " (Linear Scaling Applied)\n"
+                  << std::defaultfloat << std::setprecision(6)
+                  << "Optimizer: Adam | Clip: " << eps_clip << " | Gamma: " << gamma
+                  << std::endl;
+
+        std::time_t t0 = std::time(nullptr);
+        std::tm tm_buf;
+        localtime_r(&t0, &tm_buf);
+        char stamp[32], iso[32];
+        std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", &tm_buf);
+        std::strftime(iso,   sizeof(iso),   "%Y-%m-%dT%H:%M:%S", &tm_buf);
+
+        metrics_path = std::string(PROJECT_ROOT_DIR) + "/logs/metrics_"
+                     + variant_str + "_" + setup_str + "_" + stamp + ".jsonl";
+        metrics_log.open(metrics_path);
+        if (metrics_log.is_open()) {
+            metrics_log << std::setprecision(8);
+            metrics_log << "{\"meta\":true"
+                        << ",\"started\":\"" << iso << "\""
+                        << ",\"num_episodes\":" << num_episodes
+                        << ",\"world_size\":" << world_size
+                        << ",\"batch_size\":" << batch_size
+                        << ",\"sync_freq\":" << sync_freq
+                        << ",\"eval_every_batches\":" << eval_every_batches
+                        << ",\"learning_rate\":" << lr
+                        << ",\"gamma\":" << gamma
+                        << ",\"eps_clip\":" << eps_clip
+                        << ",\"k_epochs\":" << k_epochs
+                        << "}\n";
+            metrics_log.flush();
+            std::cout << "Metrics log: " << metrics_path << std::endl;
+        } else {
+            std::cerr << "Warning: failed to open metrics log at " << metrics_path << std::endl;
+        }
+
+        std::cout << "\nStarting Self-Play Training (Challenger vs Champion) for "
                   << local_episodes << " episodes per rank (" << num_episodes
                   << " total across " << world_size << " ranks), syncing every "
                   << sync_freq << " episodes..." << std::endl;
@@ -171,8 +219,15 @@ int main(int argc, char** argv) {
 
     float total_reward = 0;
     int games_count = 0;
-    int eval_freq = 500;
+    int batch_idx = 0;
     float win_threshold = 0.55f;
+
+    auto json_num = [](float v) -> std::string {
+        if (std::isnan(v) || std::isinf(v)) return "null";
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%.6g", v);
+        return buf;
+    };
 
     // Per-env PPO tracking
     std::vector<std::vector<stratego::Player>> move_owners(batch_size);
@@ -185,7 +240,7 @@ int main(int argc, char** argv) {
     torch::Tensor inf_mask = torch::zeros({batch_size, action_dim_size},     buf_opts);
     torch::Tensor all_actions = torch::zeros({batch_size}, torch::kInt64);
 
-    int last_sync = 0, last_eval = 0, last_update = 0;
+    int last_batch = 0;
 
     auto merge_env_buf = [&](int e) {
         for (size_t j = 0; j < env_bufs[e].size(); ++j) {
@@ -285,42 +340,74 @@ int main(int argc, char** argv) {
         cur_obs   = result.observations;
         cur_masks = result.masks;
 
-        // PPO update every batch_size completed games
-        if (games_count - last_update >= batch_size && buffer.size() > 0) {
+        // End-of-batch: PPO update, sync, optional eval, log, termination check.
+        // All "per-batch" work happens together, so eval/log can use this batch's
+        // fresh stats without any pending-state bookkeeping.
+        if (games_count - last_batch < sync_freq) continue;
+        last_batch = games_count;
+        batch_idx++;
+
+        if (buffer.size() > 0) {
             agent.update_weights(buffer);
             buffer.clear();
-            last_update = games_count;
         }
+        sync_weights(challenger, ctx);
 
-        if (games_count - last_sync >= sync_freq) {
-            last_sync = games_count;
-            sync_weights(challenger, ctx);
-            if (all_ranks_done(games_count >= local_episodes, ctx)) break;
-        }
-
-        if (rank == 0 && games_count - last_eval >= eval_freq && games_count > 0) {
-            last_eval = games_count;
-            auto now = std::chrono::high_resolution_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
-
-            std::cout << "\n--- Episode " << games_count << ": Evaluating Challenger vs Champion ---" << std::endl;
-            auto res = evaluate_vs_champion(challenger, champion, config, setup_type, device, 100);
-            std::cout << "Challenger Win Rate: " << res.win_rate * 100 << "% | Draw Rate: " << res.draw_rate * 100 << "%" << std::endl;
+        bool did_eval = false;
+        bool champion_replaced = false;
+        EvalResult res{};
+        if (rank == 0 && batch_idx % eval_every_batches == 0) {
+            res = evaluate_vs_champion(challenger, champion, config, setup_type, device, 100);
+            did_eval = true;
 
             if (res.win_rate >= win_threshold) {
-                std::cout << ">>> CHALLENGER IS THE NEW CHAMPION! Updating champion... <<<" << std::endl;
                 torch::NoGradGuard no_grad;
                 auto params = challenger->parameters();
                 auto champ_params = champion->parameters();
                 for (size_t p_idx = 0; p_idx < params.size(); ++p_idx)
                     champ_params[p_idx].copy_(params[p_idx]);
                 torch::save(challenger, model_path);
-            } else {
-                std::cout << "Challenger failed to dethrone the Champion. Continuing training..." << std::endl;
+                champion_replaced = true;
             }
-            std::cout << "Time: " << duration << "s" << std::endl;
-            std::cout << "---------------------------------------------------------" << std::endl;
         }
+
+        if (rank == 0) {
+            auto now = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
+            auto stats = agent.last_stats();
+
+            std::cout << "[batch " << batch_idx << "] ep=" << games_count
+                      << " t=" << duration << "ms"
+                      << std::fixed << std::setprecision(4)
+                      << " loss=" << stats.policy_loss
+                      << " ent=" << stats.entropy
+                      << " kl=" << stats.kl_divergence
+                      << std::defaultfloat << std::setprecision(6);
+            if (did_eval) {
+                std::cout << " | win=" << (int)(res.win_rate * 100)
+                          << "% draw=" << (int)(res.draw_rate * 100) << "%"
+                          << " champ=" << (champion_replaced ? "REPLACED" : "kept");
+            }
+            std::cout << std::endl;
+
+            if (metrics_log.is_open()) {
+                metrics_log << "{\"batch\":" << batch_idx
+                            << ",\"episode\":" << games_count
+                            << ",\"time_ms\":" << duration
+                            << ",\"policy_loss\":" << json_num(stats.policy_loss)
+                            << ",\"value_loss\":" << json_num(stats.value_loss)
+                            << ",\"entropy\":" << json_num(stats.entropy)
+                            << ",\"kl\":" << json_num(stats.kl_divergence)
+                            << ",\"win_rate\":"  << (did_eval ? json_num(res.win_rate)  : "null")
+                            << ",\"draw_rate\":" << (did_eval ? json_num(res.draw_rate) : "null")
+                            << ",\"champion_replaced\":" << (champion_replaced ? "true" : "false")
+                            << "}\n";
+                metrics_log.flush();
+            }
+        }
+
+        // Collective termination — paired one-to-one with sync_weights above.
+        if (all_ranks_done(games_count >= local_episodes, ctx)) break;
     }
 
     if (buffer.size() > 0) {
@@ -330,7 +417,19 @@ int main(int argc, char** argv) {
 
     if (rank == 0) {
         torch::save(challenger, model_path);
+        auto end_time  = std::chrono::high_resolution_clock::now();
+        auto total_ms  = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
         std::cout << "Training complete. Final model saved to " << model_path << std::endl;
+        std::cout << "Total training time: " << total_ms << "ms" << std::endl;
+
+        if (metrics_log.is_open()) {
+            metrics_log << "{\"summary\":true"
+                        << ",\"total_time_ms\":" << total_ms
+                        << ",\"completed_episodes\":" << games_count
+                        << "}\n";
+            metrics_log.flush();
+            metrics_log.close();
+        }
     }
 
     return 0;
