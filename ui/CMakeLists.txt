@@ -32,3 +32,10 @@ target_link_libraries(play PRIVATE
     ftxui::dom
     ftxui::component
 )
+
+# libtorch_cuda.so references NCCL symbols that may not be present in the system NCCL.
+if(APPLE)
+    target_link_options(play PRIVATE -Wl,-undefined,dynamic_lookup)
+else()
+    target_link_options(play PRIVATE -Wl,--allow-shlib-undefined)
+endif()
