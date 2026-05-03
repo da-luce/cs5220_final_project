@@ -29,7 +29,7 @@ export NCCL_NET_GDR_LEVEL=PHB
 
 VARIANT=${1:-tiny}
 SETUP=${2:-random}
-EPISODES=${3:-40000}
+EPISODES=${3:-20000}
 BATCH=${4:-256}
 
 mkdir -p logs models

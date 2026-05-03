@@ -150,7 +150,13 @@ int main(int argc, char** argv) {
     challenger->to(device);
     champion->to(device);
 
-    PPOAgent agent(challenger, 1e-4, 0.99, 1, 0.2);
+    // Linear scaling for SGD is common approach: https://arxiv.org/pdf/1706.02677.pdf
+    // TODO: add warmup for stability at the start of training, especially for larger batch sizes
+    int effective_batch_size = batch_size * world_size;
+    double lr = (effective_batch_size / 256.0) * 1e-4;
+
+    PPOAgent agent(challenger, lr, 0.99, 1, 0.2);
+
     RolloutBuffer<torch::Tensor, int> buffer;
 
     int local_episodes = num_episodes / world_size;
@@ -199,7 +205,7 @@ int main(int argc, char** argv) {
     // in sync after every step() call (obs_buf/mask_buf are updated in-place).
     auto [cur_obs, cur_masks] = batched_env.reset_all();
 
-    while (games_count < local_episodes) {
+    while (true) {
         auto current_players = batched_env.get_current_players();
 
         std::vector<int> active;
@@ -289,6 +295,7 @@ int main(int argc, char** argv) {
         if (games_count - last_sync >= sync_freq) {
             last_sync = games_count;
             sync_weights(challenger, ctx);
+            if (all_ranks_done(games_count >= local_episodes, ctx)) break;
         }
 
         if (rank == 0 && games_count - last_eval >= eval_freq && games_count > 0) {
