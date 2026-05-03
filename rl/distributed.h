@@ -55,13 +55,28 @@ struct DistributedContext {
     DistributedContext& operator=(const DistributedContext&) = delete;
 };
 
+// Collective termination check: returns true only when every rank reports done.
+// Used to coordinate exit from training loops that contain collectives — if one
+// rank exits early, the others hang in the next ncclAllReduce/MPI_Bcast.
+inline bool all_ranks_done(bool local_done, const DistributedContext& ctx) {
+#ifdef USE_NCCL
+    if (ctx.world_size <= 1) return local_done;
+    int l = local_done ? 1 : 0, g = 0;
+    MPI_Allreduce(&l, &g, 1, MPI_INT, MPI_LAND, MPI_COMM_WORLD);
+    return g != 0;
+#else
+    (void)ctx;
+    return local_done;
+#endif
+}
+
 // Average model weights across all ranks. No-op in CPU-only builds.
 inline void sync_weights(networks::StrategoNet& net, const DistributedContext& ctx) {
 #ifdef USE_NCCL
     if (ctx.world_size <= 1) return;
 
     // Test
-    c10::cuda::getCurrentCUDAStream().synchronize();
+    // c10::cuda::getCurrentCUDAStream().synchronize();
 
     torch::NoGradGuard no_grad;
     // Run NCCL on PyTorch's current CUDA stream so the caching allocator is aware
