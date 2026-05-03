@@ -23,6 +23,8 @@ def plot_training_logs(file_path_str):
     eval_batches = []
     win_rate = []
     draw_rate = []
+    random_win_rate = []
+    random_draw_rate = []
     champions_replaced = []
 
     # Read and parse the JSON Lines from the file
@@ -58,6 +60,8 @@ def plot_training_logs(file_path_str):
                     eval_batches.append(batch)
                     win_rate.append(data["win_rate"])
                     draw_rate.append(data["draw_rate"])
+                    random_win_rate.append(data.get("random_win_rate"))
+                    random_draw_rate.append(data.get("random_draw_rate"))
                     
                 # Track champion replacements
                 if data.get("champion_replaced"):
@@ -106,8 +110,11 @@ def plot_training_logs(file_path_str):
 
     # Plot 4: Win/Draw Rates and Champion Replacements
     if eval_batches:
-        axs[1, 1].plot(eval_batches, win_rate, marker='o', label='Win Rate', color='tab:green')
-        axs[1, 1].plot(eval_batches, draw_rate, marker='s', label='Draw Rate', color='tab:gray')
+        axs[1, 1].plot(eval_batches, win_rate, marker='o', label='Win Rate vs Champion', color='tab:green')
+        axs[1, 1].plot(eval_batches, draw_rate, marker='s', label='Draw Rate vs Champion', color='tab:gray')
+        if any(v is not None for v in random_win_rate):
+            axs[1, 1].plot(eval_batches, random_win_rate, marker='^', label='Win Rate vs Random', color='tab:blue')
+            axs[1, 1].plot(eval_batches, random_draw_rate, marker='d', label='Draw Rate vs Random', color='tab:cyan')
 
         # Mark where the champion was replaced
         for champ_batch in champions_replaced:

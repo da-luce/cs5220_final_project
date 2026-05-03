@@ -20,11 +20,14 @@ stratego::Move NeuralPolicy::get_move(const stratego::GameState& masked_state) {
     
     auto obs = torch::from_blob(features.data(), {1, C, H, W}, torch::kFloat32).clone();
 
+    torch::Device device = model->parameters().front().device();
+    obs = obs.to(device);
+
     // 2. Forward pass
     auto [logits, value] = model->forward(obs);
-    
+
     // 3. Apply mask in VIEW SPACE
-    torch::Tensor mask = get_action_mask(masked_state);
+    torch::Tensor mask = get_action_mask(masked_state).to(device);
     logits.view({1, -1}).masked_fill_(mask.unsqueeze(0) == 0, -1e9);
 
     // 4. Select best action index

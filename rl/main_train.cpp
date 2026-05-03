@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <chrono>
 #include <string>
+#include <random>
 
 struct EvalResult {
     float win_rate;
@@ -78,6 +79,64 @@ EvalResult evaluate_vs_champion(
                 } else {
                     draws++;
                 }
+            }
+        }
+    }
+
+    challenger->train();
+    return {(float)challenger_wins / num_games, (float)draws / num_games};
+}
+
+EvalResult evaluate_vs_random(
+    networks::StrategoNet challenger,
+    const stratego::BoardConfig& config,
+    stratego::state::SetupType setup_type,
+    int num_games = 50
+) {
+    challenger->eval();
+    torch::NoGradGuard no_grad;
+
+    NeuralPolicy net_policy(challenger, config);
+    RandomPolicy rand_policy;
+
+    int challenger_wins = 0;
+    int random_wins = 0;
+    int draws = 0;
+
+    for (int g = 0; g < num_games; ++g) {
+        stratego::GameState state = stratego::state::initialize(config, setup_type, 60);
+        bool challenger_is_red = (g % 2 == 0);
+
+        while (true) {
+            stratego::Player current = state.current_turn;
+            bool is_challenger_turn = (current == stratego::Player::Red && challenger_is_red) ||
+                                      (current == stratego::Player::Blue && !challenger_is_red);
+
+            if (stratego::Engine::get_all_legal_moves(state, current).empty()) {
+                if (is_challenger_turn) random_wins++;
+                else challenger_wins++;
+                break;
+            }
+
+            stratego::GameState view = stratego::state::get_masked_view(state, current);
+            stratego::Policy* active = is_challenger_turn ? (stratego::Policy*)&net_policy
+                                                          : (stratego::Policy*)&rand_policy;
+            stratego::Move move = active->get_move(view);
+            stratego::CombatResult outcome = stratego::Engine::execute_move(state, move);
+
+            if (outcome == stratego::CombatResult::FlagCaptured) {
+                if (is_challenger_turn) challenger_wins++;
+                else random_wins++;
+                break;
+            }
+            if (outcome == stratego::CombatResult::InvalidMove) {
+                if (is_challenger_turn) random_wins++;
+                else challenger_wins++;
+                break;
+            }
+            if (state.move_count >= state.max_moves) {
+                draws++;
+                break;
             }
         }
     }
@@ -356,8 +415,10 @@ int main(int argc, char** argv) {
         bool did_eval = false;
         bool champion_replaced = false;
         EvalResult res{};
+        EvalResult rand_res{};
         if (rank == 0 && batch_idx % eval_every_batches == 0) {
             res = evaluate_vs_champion(challenger, champion, config, setup_type, device, 100);
+            rand_res = evaluate_vs_random(challenger, config, setup_type, 100);
             did_eval = true;
 
             if (res.win_rate >= win_threshold) {
@@ -386,6 +447,8 @@ int main(int argc, char** argv) {
             if (did_eval) {
                 std::cout << " | win=" << (int)(res.win_rate * 100)
                           << "% draw=" << (int)(res.draw_rate * 100) << "%"
+                          << " vs_rand=" << (int)(rand_res.win_rate * 100)
+                          << "% rand_draw=" << (int)(rand_res.draw_rate * 100) << "%"
                           << " champ=" << (champion_replaced ? "REPLACED" : "kept");
             }
             std::cout << std::endl;
@@ -400,6 +463,8 @@ int main(int argc, char** argv) {
                             << ",\"kl\":" << json_num(stats.kl_divergence)
                             << ",\"win_rate\":"  << (did_eval ? json_num(res.win_rate)  : "null")
                             << ",\"draw_rate\":" << (did_eval ? json_num(res.draw_rate) : "null")
+                            << ",\"random_win_rate\":"  << (did_eval ? json_num(rand_res.win_rate)  : "null")
+                            << ",\"random_draw_rate\":" << (did_eval ? json_num(rand_res.draw_rate) : "null")
                             << ",\"champion_replaced\":" << (champion_replaced ? "true" : "false")
                             << "}\n";
                 metrics_log.flush();
