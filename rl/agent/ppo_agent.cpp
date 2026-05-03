@@ -141,5 +141,27 @@ void PPOAgent::update_weights(RolloutBuffer<torch::Tensor, int>& buffer) {
         optimizer.zero_grad();
         loss.backward();
         optimizer.step();
+
+        if (epoch == k_epochs - 1) {
+            last_stats_.policy_loss = actor_loss.item<float>();
+            last_stats_.value_loss  = critic_loss.item<float>();
+            last_stats_.entropy     = entropy.item<float>();
+        }
+    }
+
+    // Post-update approx KL (extra forward pass; diagnostic only).
+    // With k_epochs == 1 the in-loop ratio is always 1 (model unchanged at the
+    // moment of evaluation), so KL must be measured against the post-step model.
+    {
+        torch::NoGradGuard no_grad;
+        auto [logits, values] = model->forward(states);
+        torch::Tensor flat_logits = logits.view({(int)buffer.size(), -1});
+        torch::Tensor masked_logits = flat_logits.clone();
+        masked_logits.masked_fill_(masks == 0, -1e9);
+        torch::Tensor log_probs = torch::log_softmax(masked_logits, 1);
+        torch::Tensor new_logprobs = log_probs.gather(1, actions.unsqueeze(1)).squeeze(1);
+        torch::Tensor logratio = new_logprobs - old_logprobs;
+        torch::Tensor ratio = torch::exp(logratio);
+        last_stats_.kl_divergence = ((ratio - 1) - logratio).mean().item<float>();
     }
 }
