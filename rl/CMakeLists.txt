@@ -52,13 +52,14 @@ target_link_libraries(train_stratego
     $<$<BOOL:${NCCL_LIB}>:${NCCL_LIB}>
 )
 
-# libtorch_cuda.so references NCCL symbols (ncclCommWindowRegister, etc.) that may
-# not be present in the system NCCL. Defer resolution to the runtime dynamic linker.
-if(APPLE)
-    target_link_options(train_stratego PRIVATE -Wl,-undefined,dynamic_lookup)
-else()
-    target_link_options(train_stratego PRIVATE -Wl,--allow-shlib-undefined)
-endif()
+# TODO: not sure if needed
+# # libtorch_cuda.so references NCCL symbols (ncclCommWindowRegister, etc.) that may
+# # not be present in the system NCCL. Defer resolution to the runtime dynamic linker.
+# if(APPLE)
+#     target_link_options(train_stratego PRIVATE -Wl,-undefined,dynamic_lookup)
+# else()
+#     target_link_options(train_stratego PRIVATE -Wl,--allow-shlib-undefined)
+# endif()
 
 if(NCCL_LIB)
     target_compile_definitions(train_stratego PRIVATE USE_NCCL)

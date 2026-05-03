@@ -150,8 +150,7 @@ int main() {
         networks::StrategoNet model(torso, action_channels * H * W, H * W);
 
         try {
-            torch::load(model, settings.model_path);
-            model->to(torch::kCPU);
+            torch::load(model, settings.model_path, torch::Device(torch::kCPU));
             blue_agent = std::make_unique<NeuralPolicy>(model, state.board.config);
         } catch (const std::exception& e) {
             std::cerr << "Error loading model: " << e.what() << "\n";

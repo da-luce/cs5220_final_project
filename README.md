@@ -55,9 +55,10 @@ make build
 `module` modifies your shell environment so it must be run manually before building:
 
 ```shell
-module swap PrgEnv-cray PrgEnv-gnu
+module load PrgEnv-gnu
 module load gcc/12.2.0
-module load cray-mpich
+module load cray-mpich/8.1.25
+module load cudatoolkit
 ```
 
 Then configure and build using the Perlmutter profile:

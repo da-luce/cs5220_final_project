@@ -8,6 +8,7 @@
 #include <mpi.h>
 #include <nccl.h>
 #include <cuda_runtime.h>
+#include <c10/cuda/CUDAStream.h>
 #endif
 
 // RAII wrapper for MPI + NCCL lifetime. Exposes rank, world_size, and device().
@@ -57,15 +58,21 @@ struct DistributedContext {
 // Average model weights across all ranks. No-op in CPU-only builds.
 inline void sync_weights(networks::StrategoNet& net, const DistributedContext& ctx) {
 #ifdef USE_NCCL
+    if (ctx.world_size <= 1) return;
+
+    // Test
+    c10::cuda::getCurrentCUDAStream().synchronize();
+
     torch::NoGradGuard no_grad;
-    cudaStream_t stream;
-    cudaStreamCreate(&stream);
+    // Run NCCL on PyTorch's current CUDA stream so the caching allocator is aware
+    // of the work and subsequent tensor ops are correctly ordered after it.
+    auto stream = c10::cuda::getCurrentCUDAStream().stream();
+    ncclGroupStart();
     for (auto& param : net->parameters()) {
         ncclAllReduce(param.data_ptr<float>(), param.data_ptr<float>(),
                       param.numel(), ncclFloat, ncclSum, ctx.comm, stream);
     }
-    cudaStreamSynchronize(stream);
-    cudaStreamDestroy(stream);
+    ncclGroupEnd();
     for (auto& param : net->parameters())
         param.div_(ctx.world_size);
 #else
