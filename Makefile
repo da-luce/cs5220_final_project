@@ -33,14 +33,16 @@ configure:
 
 # Perlmutter profile — only sets what cmake can't discover itself on NERSC.
 # Requires modules loaded first (must be done in your shell, not from make):
-#   module swap PrgEnv-cray PrgEnv-gnu
+#   module load PrgEnv-gnu
 #   module load gcc/12.2.0
-#   module load cray-mpich
+#   module load cray-mpich/8.1.25
+#   module load cudatoolkit
 configure_perlmutter:
 	@echo "NOTE: make sure you have loaded the required modules before building."
-	@echo "  module swap PrgEnv-cray PrgEnv-gnu"
+	@echo "  module load PrgEnv-gnu"
 	@echo "  module load gcc/12.2.0"
-	@echo "  module load cray-mpich"
+	@echo "  module load cray-mpich/8.1.25"
+	@echo "  module load cudatoolkit"
 	mkdir -p $(BUILD_DIR)
 	cmake -S . -B $(BUILD_DIR) \
 		-DCMAKE_PREFIX_PATH=$(PERLMUTTER_TORCH_CMAKE) \

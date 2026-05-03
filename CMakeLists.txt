@@ -88,15 +88,16 @@ target_link_libraries(unified_test
     $<$<BOOL:${NCCL_LIB}>:${NCCL_LIB}>
 )
 
-# libtorch_cuda.so references NCCL symbols that may not be present on this system.
-# The test binary never calls CUDA/NCCL code so it's safe to defer resolution to runtime.
-if(APPLE)
-    # macOS equivalent: allows undefined symbols to be resolved at runtime
-    target_link_options(unified_test PRIVATE -Wl,-undefined,dynamic_lookup)
-else()
-    # Linux/GNU linker
-    target_link_options(unified_test PRIVATE -Wl,--allow-shlib-undefined)
-endif()
+# TODO: not sure if needed =
+# # libtorch_cuda.so references NCCL symbols that may not be present on this system.
+# # The test binary never calls CUDA/NCCL code so it's safe to defer resolution to runtime.
+# if(APPLE)
+#     # macOS equivalent: allows undefined symbols to be resolved at runtime
+#     target_link_options(unified_test PRIVATE -Wl,-undefined,dynamic_lookup)
+# else()
+#     # Linux/GNU linker
+#     target_link_options(unified_test PRIVATE -Wl,--allow-shlib-undefined)
+# endif()
 
 # Include directories so headers like "features.h" and "board.h" are found
 target_include_directories(unified_test PRIVATE 
