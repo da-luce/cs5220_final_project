@@ -159,10 +159,13 @@ int main(int argc, char** argv) {
     std::string setup_str = "random";
     int num_episodes = 20000;
     int batch_size = 256;
+    int eval_every = 2;
     if (argc >= 2) variant_str = argv[1];
     if (argc >= 3) setup_str = argv[2];
     if (argc >= 4) num_episodes = std::stoi(argv[3]);
     if (argc >= 5) batch_size = std::stoi(argv[4]);
+    if (argc >= 6) eval_every = std::stoi(argv[5]);
+    const bool bench_mode = (eval_every == 0);
 
     stratego::GameType game_type;
     if (variant_str == "classic")       game_type = stratego::GameType::Classic;
@@ -225,7 +228,7 @@ int main(int argc, char** argv) {
 
     int local_episodes = num_episodes / world_size;
     int sync_freq = batch_size;
-    const int eval_every_batches = 2;  // ~512 games per eval at sync_freq=256
+    const int eval_every_batches = eval_every;  // 0 disables eval (benchmark mode)
 
     std::ofstream metrics_log;
     std::string metrics_path;
@@ -247,8 +250,10 @@ int main(int argc, char** argv) {
         std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", &tm_buf);
         std::strftime(iso,   sizeof(iso),   "%Y-%m-%dT%H:%M:%S", &tm_buf);
 
-        metrics_path = std::string(PROJECT_ROOT_DIR) + "/logs/metrics_"
-                     + variant_str + "_" + setup_str + "_" + stamp + ".jsonl";
+        std::string prefix = bench_mode ? "/logs/bench_" : "/logs/metrics_";
+        std::string ws_tag = bench_mode ? ("_n" + std::to_string(world_size)) : "";
+        metrics_path = std::string(PROJECT_ROOT_DIR) + prefix
+                     + variant_str + "_" + setup_str + ws_tag + "_" + stamp + ".jsonl";
         metrics_log.open(metrics_path);
         if (metrics_log.is_open()) {
             metrics_log << std::setprecision(8);
@@ -416,7 +421,7 @@ int main(int argc, char** argv) {
         bool champion_replaced = false;
         EvalResult res{};
         EvalResult rand_res{};
-        if (rank == 0 && batch_idx % eval_every_batches == 0) {
+        if (eval_every_batches > 0 && rank == 0 && batch_idx % eval_every_batches == 0) {
             res = evaluate_vs_champion(challenger, champion, config, setup_type, device, 100);
             rand_res = evaluate_vs_random(challenger, config, setup_type, 100);
             did_eval = true;
@@ -481,10 +486,14 @@ int main(int argc, char** argv) {
     }
 
     if (rank == 0) {
-        torch::save(challenger, model_path);
+        if (!bench_mode) torch::save(challenger, model_path);
         auto end_time  = std::chrono::high_resolution_clock::now();
         auto total_ms  = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-        std::cout << "Training complete. Final model saved to " << model_path << std::endl;
+        if (bench_mode) {
+            std::cout << "Benchmark complete (model not saved)." << std::endl;
+        } else {
+            std::cout << "Training complete. Final model saved to " << model_path << std::endl;
+        }
         std::cout << "Total training time: " << total_ms << "ms" << std::endl;
 
         if (metrics_log.is_open()) {
