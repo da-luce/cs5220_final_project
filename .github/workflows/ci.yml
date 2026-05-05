@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -59,7 +60,9 @@ jobs:
 
       # 1 episode of the smallest game variant to verify the train pipeline runs.
       - name: Smoke test train_stratego (1 episode, tiny/default)
-        run: ./build/src/rl/train_stratego tiny default 1
+        run: |
+          mkdir -p models logs
+          ./build/src/rl/train_stratego tiny default 1
 
       # play is an interactive TUI — just verify the binary was produced.
       - name: Verify play binary exists
