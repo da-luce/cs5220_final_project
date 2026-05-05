@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y cmake build-essential libgomp1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # LibTorch CPU-only (~800 MB). Cache by torch version so this step
+      # is only re-downloaded when the version string changes.
+      - name: Cache pip (LibTorch CPU)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-torch-cpu-v1
+
+      - name: Install LibTorch (CPU-only)
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Get Torch CMake prefix path
+        id: torch
+        run: |
+          TORCH_CMAKE=$(python -c "import torch; print(torch.utils.cmake_prefix_path)")
+          echo "cmake_prefix=$TORCH_CMAKE" >> "$GITHUB_OUTPUT"
+
+      # Cache the CMake build directory. Busted when CMakeLists files change.
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: ${{ runner.os }}-cmake-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt') }}-v1
+
+      - name: Configure
+        run: make configure TORCH_CMAKE="${{ steps.torch.outputs.cmake_prefix }}"
+
+      - name: Build
+        run: make build
+
+      - name: Run tests
+        run: ./build/test
+
+      - name: Smoke test arena (1 game, random vs random)
+        run: ./build/arena --games 1 --red random --blue random --threads 1
+
+      # 1 episode of the smallest game variant to verify the train pipeline runs.
+      - name: Smoke test train_stratego (1 episode, tiny/default)
+        run: ./build/src/rl/train_stratego tiny default 1
+
+      # play is an interactive TUI — just verify the binary was produced.
+      - name: Verify play binary exists
+        run: test -x build/src/ui/play
