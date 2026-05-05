@@ -28,13 +28,13 @@ void append_combat_msg(CombatResult cr, std::string& msg, bool& game_over) {
     else if (cr == CombatOutcome::DefenderWins) msg += " Defender Wins!";
     else if (cr == CombatOutcome::BothDestroyed) msg += " Both destroyed!";
     else if (cr == CombatOutcome::FlagCaptured) {
-        msg += " FLAG CAPTURED!";
+        msg += " FLAG CAPTURED! N to play again, Q to quit.";
         game_over = true;
     } else if (cr == CombatOutcome::Draw) {
-        msg += " Game drawn.";
+        msg += " Game drawn. N to play again, Q to quit.";
         game_over = true;
     } else if (cr == CombatOutcome::NoLegalMoves) {
-        msg += " No legal moves — current player loses! Press Q to quit.";
+        msg += " No legal moves — current player loses! N to play again, Q to quit.";
         game_over = true;
     }
 }
@@ -57,7 +57,7 @@ std::optional<Move> process_human_input(Event event, const GameState& state, UIG
     if (event == Event::Character('q') || event == Event::Character('Q')) ui_state.exit_game = true;
     else if (event == Event::Character('r') || event == Event::Character('R')) {
         ui_state.game_over = true;
-        ui_state.status_msg = "You resigned. Game Over.";
+        ui_state.status_msg = "You resigned. Game Over. N to play again, Q to quit.";
         ui_state.selected_x = -1;
         ui_state.selected_y = -1;
     }
@@ -118,135 +118,145 @@ int main() {
     }
     GameSettings settings = *settings_opt;
 
-    GameState state;
-    if (settings.new_game) {
-        BoardConfig config = get_config_for_game_type(settings.game_type);
-        state = state::initialize(config, settings.setup_type, 2000);
-    } else {
-        // Graceful fallback for non-supported save loadings right now
-        BoardConfig config = get_config_for_game_type(GameType::Classic);
-        state = state::initialize(config, state::SetupType::Random, 2000);
-    }
+    bool play_again = true;
+    while (play_again) {
+        play_again = false;
 
-    UIGameState ui_state;
-    ui_state.cursor_x = 0;
-    ui_state.cursor_y = state.board.get_height() > 4 ? 6 : state.board.get_height() - 1;
-    ui_state.ai_type = (settings.ai_type == AIType::Random) ? "Random AI" : "Trained AI";
-    ui_state.model_path = settings.model_path;
-
-    std::unique_ptr<Policy> red_agent = std::make_unique<Human>();
-    std::unique_ptr<Policy> blue_agent;
-    
-    if (settings.ai_type == AIType::Random) {
-        blue_agent = std::make_unique<Random>();
-    } else {
-        // Initialize NeuralPolicy
-        int in_channels = get_encoding_channels(state.board.config);
-        int hidden_filters = 64;
-
-        encoding::actions::ActionEncoder encoder(state.board.config);
-        int action_channels = encoder.get_action_channels();
-        int H = state.board.config.height;
-        int W = state.board.config.width;
-
-        auto torso = std::make_shared<networks::torsos::CNNTorsoImpl>(in_channels, hidden_filters, 0);
-        networks::StrategoNet model(torso, action_channels * H * W, H * W);
-
-        try {
-            torch::load(model, settings.model_path, torch::Device(torch::kCPU));
-            blue_agent = std::make_unique<NeuralPolicy>(model, state.board.config);
-        } catch (const std::exception& e) {
-            std::cerr << "Error loading model: " << e.what() << "\n";
-            return 1;
+        GameState state;
+        if (settings.new_game) {
+            BoardConfig config = get_config_for_game_type(settings.game_type);
+            state = state::initialize(config, settings.setup_type, 2000);
+        } else {
+            // Graceful fallback for non-supported save loadings right now
+            BoardConfig config = get_config_for_game_type(GameType::Classic);
+            state = state::initialize(config, state::SetupType::Random, 2000);
         }
-    }
 
-    GameRunner orch(state, std::move(red_agent), std::move(blue_agent));
-    auto screen = ScreenInteractive::Fullscreen();
-    bool ai_thinking = false;
+        UIGameState ui_state;
+        ui_state.cursor_x = 0;
+        ui_state.cursor_y = state.board.get_height() > 4 ? 6 : state.board.get_height() - 1;
+        ui_state.ai_type = (settings.ai_type == AIType::Random) ? "Random AI" : "Trained AI";
+        ui_state.model_path = settings.model_path;
 
-    auto renderer = Renderer([&] {
-        return render_board(orch.get_state(), ui_state);
-    });
+        std::unique_ptr<Policy> red_agent = std::make_unique<Human>();
+        std::unique_ptr<Policy> blue_agent;
 
-    auto catch_event = CatchEvent(renderer, [&](Event event) {
-        if (ui_state.exit_game) {
-            screen.Exit();
-            return true;
+        if (settings.ai_type == AIType::Random) {
+            blue_agent = std::make_unique<Random>();
+        } else {
+            // Initialize NeuralPolicy
+            int in_channels = get_encoding_channels(state.board.config);
+            int hidden_filters = 64;
+
+            encoding::actions::ActionEncoder encoder(state.board.config);
+            int action_channels = encoder.get_action_channels();
+            int H = state.board.config.height;
+            int W = state.board.config.width;
+
+            auto torso = std::make_shared<networks::torsos::CNNTorsoImpl>(in_channels, hidden_filters, 0);
+            networks::StrategoNet model(torso, action_channels * H * W, H * W);
+
+            try {
+                torch::load(model, settings.model_path, torch::Device(torch::kCPU));
+                blue_agent = std::make_unique<NeuralPolicy>(model, state.board.config);
+            } catch (const std::exception& e) {
+                std::cerr << "Error loading model: " << e.what() << "\n";
+                return 1;
+            }
         }
-        
-        if (ui_state.game_over) {
-            if (event == Event::Character('q') || event == Event::Character('Q')) {
+
+        GameRunner orch(state, std::move(red_agent), std::move(blue_agent));
+        auto screen = ScreenInteractive::Fullscreen();
+        bool ai_thinking = false;
+
+        auto renderer = Renderer([&] {
+            return render_board(orch.get_state(), ui_state);
+        });
+
+        auto catch_event = CatchEvent(renderer, [&](Event event) {
+            if (ui_state.exit_game) {
                 screen.Exit();
                 return true;
             }
+
+            if (ui_state.game_over) {
+                if (event == Event::Character('q') || event == Event::Character('Q')) {
+                    screen.Exit();
+                    return true;
+                }
+                if (event == Event::Character('n') || event == Event::Character('N')) {
+                    play_again = true;
+                    screen.Exit();
+                    return true;
+                }
+                return false;
+            }
+
+            if (ai_thinking) return true; // Block input while AI is thinking
+
+            Policy* active = orch.get_active_agent();
+            if (active->is_human()) {
+                auto m_opt = process_human_input(event, orch.get_state(), ui_state);
+                if (m_opt) {
+                    static_cast<Human*>(active)->set_next_move(*m_opt);
+                    CombatResult res = orch.step();
+                    ui_state.status_msg = "Move resolved.";
+                    append_combat_msg(res, ui_state.status_msg, ui_state.game_over);
+
+                    // If the next player has no legal moves, resolve that immediately
+                    if (!ui_state.game_over && Engine::get_all_legal_moves(orch.get_state(), orch.get_state().current_turn).empty()) {
+                        CombatResult no_moves = orch.step();
+                        append_combat_msg(no_moves, ui_state.status_msg, ui_state.game_over);
+                    }
+
+                    // Immediately trigger AI turn if game is not over and it's AI turn
+                    if (!ui_state.game_over && !orch.get_active_agent()->is_human()) {
+                        ai_thinking = true;
+                        ui_state.status_msg = "AI is thinking...";
+
+                        auto task = [&screen]() {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(600));
+                            screen.PostEvent(Event::Custom);
+                        };
+                        std::thread(task).detach();
+                    }
+                }
+                return true;
+            }
             return false;
-        }
+        });
 
-        if (ai_thinking) return true; // Block input while AI is thinking
-
-        Policy* active = orch.get_active_agent();
-        if (active->is_human()) {
-            auto m_opt = process_human_input(event, orch.get_state(), ui_state);
-            if (m_opt) {
-                static_cast<Human*>(active)->set_next_move(*m_opt);
+        // We need to catch the Custom event which is fired by the AI thread
+        auto final_component = CatchEvent(catch_event, [&](Event event) {
+            if (event == Event::Custom && ai_thinking) {
                 CombatResult res = orch.step();
-                ui_state.status_msg = "Move resolved.";
+                ui_state.status_msg = "AI moved.";
                 append_combat_msg(res, ui_state.status_msg, ui_state.game_over);
+                ai_thinking = false;
 
-                // If the next player has no legal moves, resolve that immediately
+                // If the next player (human) has no legal moves, resolve immediately
                 if (!ui_state.game_over && Engine::get_all_legal_moves(orch.get_state(), orch.get_state().current_turn).empty()) {
                     CombatResult no_moves = orch.step();
                     append_combat_msg(no_moves, ui_state.status_msg, ui_state.game_over);
                 }
-
-                // Immediately trigger AI turn if game is not over and it's AI turn
-                if (!ui_state.game_over && !orch.get_active_agent()->is_human()) {
-                    ai_thinking = true;
-                    ui_state.status_msg = "AI is thinking...";
-                    
-                    auto task = [&screen]() {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(600));
-                        screen.PostEvent(Event::Custom);
-                    };
-                    std::thread(task).detach();
-                }
+                return true;
             }
-            return true;
-        }
-        return false;
-    });
-    
-    // We need to catch the Custom event which is fired by the AI thread
-    auto final_component = CatchEvent(catch_event, [&](Event event) {
-        if (event == Event::Custom && ai_thinking) {
-            CombatResult res = orch.step();
-            ui_state.status_msg = "AI moved.";
-            append_combat_msg(res, ui_state.status_msg, ui_state.game_over);
-            ai_thinking = false;
+            return false;
+        });
 
-            // If the next player (human) has no legal moves, resolve immediately
-            if (!ui_state.game_over && Engine::get_all_legal_moves(orch.get_state(), orch.get_state().current_turn).empty()) {
-                CombatResult no_moves = orch.step();
-                append_combat_msg(no_moves, ui_state.status_msg, ui_state.game_over);
-            }
-            return true;
+        // Check if AI goes first
+        if (!orch.get_active_agent()->is_human()) {
+            ai_thinking = true;
+            ui_state.status_msg = "AI is thinking...";
+            auto task = [&screen]() {
+                std::this_thread::sleep_for(std::chrono::milliseconds(600));
+                screen.PostEvent(Event::Custom);
+            };
+            std::thread(task).detach();
         }
-        return false;
-    });
 
-    // Check if AI goes first
-    if (!orch.get_active_agent()->is_human()) {
-        ai_thinking = true;
-        ui_state.status_msg = "AI is thinking...";
-        auto task = [&screen]() {
-            std::this_thread::sleep_for(std::chrono::milliseconds(600));
-            screen.PostEvent(Event::Custom);
-        };
-        std::thread(task).detach();
+        screen.Loop(final_component);
     }
-
-    screen.Loop(final_component);
 
     return 0;
 }
