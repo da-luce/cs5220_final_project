@@ -245,7 +245,9 @@ std::optional<GameSettings> start_menu() {
                         for (const auto& entry : std::filesystem::directory_iterator(models_path)) {
                             if (entry.is_regular_file() && entry.path().extension() == ".pt") {
                                 std::string filename = entry.path().filename().string();
-                                if (filename == model_prefix + ".pt") {
+                                if (filename.size() > model_prefix.size() &&
+                                    filename.substr(0, model_prefix.size()) == model_prefix &&
+                                    (filename[model_prefix.size()] == '.' || filename[model_prefix.size()] == '_')) {
                                     model_entries.push_back(filename);
                                 }
                             }
