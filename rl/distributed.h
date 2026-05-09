@@ -19,12 +19,23 @@ struct DistributedContext {
 
 #ifdef USE_NCCL
     ncclComm_t comm{};
+    int local_rank = 0;
 
     DistributedContext(int& argc, char**& argv) {
         MPI_Init(&argc, &argv);
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-        cudaSetDevice(rank);
+
+        // Node-local rank picks a GPU index that exists on this node.
+        // cudaSetDevice(global_rank) only works while world_size <= gpus_per_node;
+        // beyond that, ranks on the second node would address GPUs that aren't there.
+        MPI_Comm node_comm;
+        MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, rank,
+                            MPI_INFO_NULL, &node_comm);
+        MPI_Comm_rank(node_comm, &local_rank);
+        MPI_Comm_free(&node_comm);
+
+        cudaSetDevice(local_rank);
 
         ncclUniqueId nccl_id;
         if (rank == 0) ncclGetUniqueId(&nccl_id);
@@ -40,7 +51,7 @@ struct DistributedContext {
         MPI_Finalize();
     }
 
-    torch::Device device() const { return torch::Device(torch::kCUDA, rank); }
+    torch::Device device() const { return torch::Device(torch::kCUDA, local_rank); }
 #else
     DistributedContext(int& /*argc*/, char**& /*argv*/) {
         std::cout << "[CPU-only, no MPI/NCCL] Compiled without USE_NCCL" << std::endl;
