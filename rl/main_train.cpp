@@ -147,7 +147,12 @@ EvalResult evaluate_vs_random(
 
 int main(int argc, char** argv) {
     std::cout.setf(std::ios::unitbuf);
-    torch::set_num_threads(1);
+    // Don't call torch::set_num_threads() here. On Linux libtorch is built with
+    // the OpenMP backend, and at::set_num_threads() resolves to omp_set_num_threads(),
+    // which would clobber whatever OMP_NUM_THREADS the launcher set and silently
+    // serialize BatchedStrategoEnv's `#pragma omp parallel for` no matter what
+    // the env var says. Let OMP_NUM_THREADS (from sbatch / srun --export) be the
+    // single source of truth for both env stepping and libtorch's intra-op pool.
     auto start_time = std::chrono::high_resolution_clock::now();
 
     DistributedContext ctx(argc, argv);
