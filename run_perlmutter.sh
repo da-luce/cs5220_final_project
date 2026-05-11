@@ -27,6 +27,7 @@ VARIANT=${1:-tiny}
 SETUP=${2:-random}
 EPISODES=${3:-20000}
 BATCH=${4:-256}
+EVAL_EPISODES=${5:-50}   # Sets the eval frequency: every EVAL_EPISODES train episodes, run eval games on rank 0. Set to 0 to disable eval and measure pure training time.
 
 # Derive total tasks from the actual node count Slurm assigned.
 # Override the default --ntasks=4 header when submitting multi-node:
@@ -35,5 +36,4 @@ NTASKS=${SLURM_NTASKS:-4}
 
 mkdir -p logs models
 
-srun --ntasks="$NTASKS" --mpi=cray_shasta \
-    ./build/rl/train_stratego "$VARIANT" "$SETUP" "$EPISODES" "$BATCH"
+srun --ntasks="$NTASKS" --mpi=cray_shasta ./build/src/rl/train_stratego "$VARIANT" "$SETUP" "$EPISODES" "$BATCH" "$EVAL_EPISODES"

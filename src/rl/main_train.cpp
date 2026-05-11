@@ -198,7 +198,12 @@ EvalResult evaluate_vs_random(
 
 int main(int argc, char** argv) {
     std::cout.setf(std::ios::unitbuf);
-    torch::set_num_threads(1);
+    // Don't call torch::set_num_threads() here. On Linux libtorch is built with
+    // the OpenMP backend, and at::set_num_threads() resolves to omp_set_num_threads(),
+    // which would clobber whatever OMP_NUM_THREADS the launcher set and silently
+    // serialize BatchedStrategoEnv's `#pragma omp parallel for` no matter what
+    // the env var says. Let OMP_NUM_THREADS (from sbatch / srun --export) be the
+    // single source of truth for both env stepping and libtorch's intra-op pool.
     auto start_time = std::chrono::high_resolution_clock::now();
 
     DistributedContext ctx(argc, argv);
@@ -393,6 +398,18 @@ int main(int argc, char** argv) {
     // in sync after every step() call (obs_buf/mask_buf are updated in-place).
     auto [cur_obs, cur_masks] = batched_env.reset_all();
 
+    int max_game_length = batched_env.get_max_moves() + 1; // +1 for the terminal state 
+    for (int e = 0; e < batch_size; ++e) {
+        env_bufs[e].observations.reserve(max_game_length);
+        env_bufs[e].actions.reserve(max_game_length);
+        env_bufs[e].log_probs.reserve(max_game_length);
+        env_bufs[e].values.reserve(max_game_length);
+        env_bufs[e].masks.reserve(max_game_length);
+        env_bufs[e].rewards.reserve(max_game_length);
+        env_bufs[e].is_terminals.reserve(max_game_length);
+        move_owners[e].reserve(max_game_length);
+    }
+
     while (true) {
         std::vector<stratego::Player> current_players;
         std::vector<int> active;
@@ -405,8 +422,19 @@ int main(int argc, char** argv) {
             active.reserve(batch_size);
             all_actions.zero_();
 
+            // --- NEW: Copy to batched tensor first ---
             for (int e = 0; e < batch_size; ++e) {
-                if (cur_masks[e].sum().item<float>() == 0) {
+                inf_mask[e].copy_(cur_masks[e], /*non_blocking=*/true);
+            }
+
+            // --- NEW: Perform a single vectorized sum across the action dimension ---
+            // Assuming inf_mask is shape [batch_size, action_dim_size]
+            torch::Tensor mask_sums = inf_mask.sum({1}); 
+            auto sums_accessor = mask_sums.accessor<float, 1>();
+
+            for (int e = 0; e < batch_size; ++e) {
+                // Check our batched sum accessor instead of calling .item()
+                if (sums_accessor[e] == 0) {
                     // Trapped: current player has no legal moves — opponent wins
                     is_trap[e] = true;
                     stratego::Player winner = (current_players[e] == stratego::Player::Red)
@@ -420,12 +448,17 @@ int main(int argc, char** argv) {
                         env_bufs[e].is_terminals.back() = true;
                     merge_env_buf(e);
                     games_count++;
-                    // all_actions[e] stays 0 — the env will treat it as an invalid move,
-                    // terminate, and immediately auto-reset inside step().
                 } else {
                     int ai = (int)active.size();
                     inf_obs[ai].copy_(cur_obs[e]);
-                    inf_mask[ai].copy_(cur_masks[e]);
+                    
+                    // inf_mask[ai] needs to pack the active masks tightly.
+                    // Since we already copied cur_masks[e] into inf_mask[e] above,
+                    // we just copy it to the packed index if necessary.
+                    if (ai != e) {
+                        inf_mask[ai].copy_(inf_mask[e], /*non_blocking=*/true);
+                    }
+                    
                     active.push_back(e);
                 }
             }
