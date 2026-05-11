@@ -4,7 +4,8 @@ BUILD_TYPE ?= Release
 PERLMUTTER_TORCH_CMAKE  := /global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/torch/share/cmake
 PERLMUTTER_NCCL_LIB     := /global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2
 PERLMUTTER_NCCL_INCLUDE := /global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/nvidia/nccl/include
-PERLMUTTER_GTL_FLAGS    := -L/opt/cray/pe/mpich/8.1.25/gtl/lib -lmpi_gtl_cuda
+# GTL flags come from the loaded cray-mpich module automatically
+PERLMUTTER_GTL_FLAGS    := $(PE_MPICH_GTL_DIR_nvidia80) $(PE_MPICH_GTL_LIBS_nvidia80)
 
 .PHONY: configure configure_perlmutter build clean
 
@@ -41,8 +42,6 @@ configure:
 configure_perlmutter:
 	@echo "NOTE: make sure you have loaded the required modules before building."
 	@echo "  module load PrgEnv-gnu"
-	@echo "  module load gcc/12.2.0"
-	@echo "  module load cray-mpich/8.1.25"
 	@echo "  module load cudatoolkit"
 	mkdir -p $(BUILD_DIR)
 	cmake -S . -B $(BUILD_DIR) \
