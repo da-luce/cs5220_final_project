@@ -7,6 +7,7 @@
 #include "networks/torsos/cnn.h"
 #include "rl/encoding/board.h"
 #include "rl/distributed.h"
+#include "rl/profiler.h"
 #include <iostream>
 #include <iomanip>
 #include <fstream>
@@ -393,84 +394,102 @@ int main(int argc, char** argv) {
     auto [cur_obs, cur_masks] = batched_env.reset_all();
 
     while (true) {
-        auto current_players = batched_env.get_current_players();
-
+        std::vector<stratego::Player> current_players;
         std::vector<int> active;
-        active.reserve(batch_size);
         std::vector<bool> is_trap(batch_size, false);
-        all_actions.zero_();
+        int n_active = 0;
+        {
+            PROFILE_SCOPE("rollout_aux");
+            current_players = batched_env.get_current_players();
 
-        for (int e = 0; e < batch_size; ++e) {
-            if (cur_masks[e].sum().item<float>() == 0) {
-                // Trapped: current player has no legal moves — opponent wins
-                is_trap[e] = true;
-                stratego::Player winner = (current_players[e] == stratego::Player::Red)
-                                          ? stratego::Player::Blue : stratego::Player::Red;
-                for (int j = 0; j < (int)move_owners[e].size(); ++j) {
-                    float r = (move_owners[e][j] == winner) ? 1.0f : -1.0f;
-                    env_bufs[e].rewards[j] = r;
-                    total_reward += r;
+            active.reserve(batch_size);
+            all_actions.zero_();
+
+            for (int e = 0; e < batch_size; ++e) {
+                if (cur_masks[e].sum().item<float>() == 0) {
+                    // Trapped: current player has no legal moves — opponent wins
+                    is_trap[e] = true;
+                    stratego::Player winner = (current_players[e] == stratego::Player::Red)
+                                              ? stratego::Player::Blue : stratego::Player::Red;
+                    for (int j = 0; j < (int)move_owners[e].size(); ++j) {
+                        float r = (move_owners[e][j] == winner) ? 1.0f : -1.0f;
+                        env_bufs[e].rewards[j] = r;
+                        total_reward += r;
+                    }
+                    if (!env_bufs[e].is_terminals.empty())
+                        env_bufs[e].is_terminals.back() = true;
+                    merge_env_buf(e);
+                    games_count++;
+                    // all_actions[e] stays 0 — the env will treat it as an invalid move,
+                    // terminate, and immediately auto-reset inside step().
+                } else {
+                    int ai = (int)active.size();
+                    inf_obs[ai].copy_(cur_obs[e]);
+                    inf_mask[ai].copy_(cur_masks[e]);
+                    active.push_back(e);
                 }
-                if (!env_bufs[e].is_terminals.empty())
-                    env_bufs[e].is_terminals.back() = true;
-                merge_env_buf(e);
-                games_count++;
-                // all_actions[e] stays 0 — the env will treat it as an invalid move,
-                // terminate, and immediately auto-reset inside step().
-            } else {
-                int ai = (int)active.size();
-                inf_obs[ai].copy_(cur_obs[e]);
-                inf_mask[ai].copy_(cur_masks[e]);
-                active.push_back(e);
             }
+            n_active = (int)active.size();
         }
 
-        if (!active.empty()) {
-            int n = (int)active.size();
-            auto outputs = agent.act_batch(
-                inf_obs.slice(0, 0, n).to(device, /*non_blocking=*/true),
-                inf_mask.slice(0, 0, n).to(device, /*non_blocking=*/true)
-            );
+        if (n_active > 0) {
+            torch::Tensor obs_gpu, mask_gpu;
+            {
+                PROFILE_SCOPE_GPU("infer_h2d");
+                obs_gpu  = inf_obs.slice(0, 0, n_active).to(device, /*non_blocking=*/true);
+                mask_gpu = inf_mask.slice(0, 0, n_active).to(device, /*non_blocking=*/true);
+            }
+            auto outputs = agent.act_batch(obs_gpu, mask_gpu);
 
-            // Record pre-step data (clone because obs_buf is updated in-place by step)
-            for (int ai = 0; ai < n; ++ai) {
-                int e = active[ai];
-                move_owners[e].push_back(current_players[e]);
-                env_bufs[e].observations.push_back(cur_obs[e].clone());
-                env_bufs[e].actions.push_back(outputs.actions[ai]);
-                env_bufs[e].log_probs.push_back(outputs.log_probs[ai]);
-                env_bufs[e].values.push_back(outputs.values[ai]);
-                env_bufs[e].masks.push_back(cur_masks[e].clone());
-                env_bufs[e].rewards.push_back(0.0f);
-                env_bufs[e].is_terminals.push_back(false);
-                all_actions[e] = (int64_t)outputs.actions[ai];
+            {
+                PROFILE_SCOPE("rollout_aux");
+                // Record pre-step data (clone because obs_buf is updated in-place by step)
+                for (int ai = 0; ai < n_active; ++ai) {
+                    int e = active[ai];
+                    move_owners[e].push_back(current_players[e]);
+                    env_bufs[e].observations.push_back(cur_obs[e].clone());
+                    env_bufs[e].actions.push_back(outputs.actions[ai]);
+                    env_bufs[e].log_probs.push_back(outputs.log_probs[ai]);
+                    env_bufs[e].values.push_back(outputs.values[ai]);
+                    env_bufs[e].masks.push_back(cur_masks[e].clone());
+                    env_bufs[e].rewards.push_back(0.0f);
+                    env_bufs[e].is_terminals.push_back(false);
+                    all_actions[e] = (int64_t)outputs.actions[ai];
+                }
             }
         }
 
         // Step all envs; terminated ones immediately auto-reset inside step()
-        auto result = batched_env.step(all_actions);
-
-        // Handle terminals for active (non-trapped) envs
-        for (int ai = 0; ai < (int)active.size(); ++ai) {
-            int e = active[ai];
-            if (result.dones[e]) {
-                float fr = result.rewards[e];
-                stratego::Player last_mover = move_owners[e].back();
-                for (int j = 0; j < (int)move_owners[e].size(); ++j) {
-                    float r = (move_owners[e][j] == last_mover) ? fr : -fr;
-                    env_bufs[e].rewards[j] = r;
-                    total_reward += r;
-                }
-                env_bufs[e].is_terminals.back() = true;
-                merge_env_buf(e);
-                games_count++;
-            }
+        BatchedStepResult result;
+        {
+            PROFILE_SCOPE("env_step");
+            result = batched_env.step(all_actions);
         }
 
-        // cur_obs/cur_masks alias obs_buf/mask_buf which were updated in-place by step().
-        // Re-assign to pick up the returned tensors explicitly (no-op in practice).
-        cur_obs   = result.observations;
-        cur_masks = result.masks;
+        {
+            PROFILE_SCOPE("rollout_aux");
+            // Handle terminals for active (non-trapped) envs
+            for (int ai = 0; ai < (int)active.size(); ++ai) {
+                int e = active[ai];
+                if (result.dones[e]) {
+                    float fr = result.rewards[e];
+                    stratego::Player last_mover = move_owners[e].back();
+                    for (int j = 0; j < (int)move_owners[e].size(); ++j) {
+                        float r = (move_owners[e][j] == last_mover) ? fr : -fr;
+                        env_bufs[e].rewards[j] = r;
+                        total_reward += r;
+                    }
+                    env_bufs[e].is_terminals.back() = true;
+                    merge_env_buf(e);
+                    games_count++;
+                }
+            }
+
+            // cur_obs/cur_masks alias obs_buf/mask_buf which were updated in-place by step().
+            // Re-assign to pick up the returned tensors explicitly (no-op in practice).
+            cur_obs   = result.observations;
+            cur_masks = result.masks;
+        }
 
         // End-of-batch: PPO update, sync, optional eval, log, termination check.
         // All "per-batch" work happens together, so eval/log can use this batch's
@@ -483,13 +502,17 @@ int main(int argc, char** argv) {
             agent.update_weights(buffer);
             buffer.clear();
         }
-        sync_weights(challenger, ctx);
+        {
+            PROFILE_SCOPE_GPU("allreduce");
+            sync_weights(challenger, ctx);
+        }
 
         bool did_eval = false;
         bool champion_replaced = false;
         EvalResult res{};
         EvalResult rand_res{};
         if (eval_every_batches > 0 && rank == 0 && batch_idx % eval_every_batches == 0) {
+            PROFILE_SCOPE_GPU("eval");
             res = evaluate_vs_champion(challenger, champion, config, setup_type, device, 100);
             rand_res = evaluate_vs_random(challenger, config, setup_type, 100);
             did_eval = true;
@@ -565,6 +588,7 @@ int main(int argc, char** argv) {
         std::cout << "Total training time: " << total_ms << "ms" << std::endl;
 
         if (metrics_log.is_open()) {
+            metrics_log << profiling::Profiler::instance().to_jsonl((double)total_ms);
             metrics_log << "{\"summary\":true"
                         << ",\"total_time_ms\":" << total_ms
                         << ",\"completed_episodes\":" << games_count

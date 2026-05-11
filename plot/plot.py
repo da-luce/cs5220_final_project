@@ -4,6 +4,77 @@ import argparse
 import sys
 from pathlib import Path
 
+
+def plot_stage_breakdown(file_path_str):
+    """Render a bar chart of per-stage wall-clock time from the profiling record
+    emitted at the end of training. Returns the saved path, or None if the log
+    contains no profiling entry."""
+    log_path = Path(file_path_str)
+    if not log_path.exists():
+        print(f"Error: The file '{log_path}' was not found.")
+        return None
+
+    profiling = None
+    total_time_ms = None
+    with open(log_path, 'r') as file:
+        for line in file:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if data.get("profiling"):
+                profiling = data.get("stages", {})
+                total_time_ms = data.get("total_time_ms")
+                break
+
+    if not profiling:
+        print("No profiling record found in log; skipping stage breakdown plot.")
+        return None
+
+    stages = sorted(profiling.items(), key=lambda kv: kv[1].get("total_ms", 0.0), reverse=True)
+    names = [s[0] for s in stages]
+    totals_ms = [s[1].get("total_ms", 0.0) for s in stages]
+    counts = [s[1].get("count", 0) for s in stages]
+
+    measured_total = sum(totals_ms)
+    denom = total_time_ms if total_time_ms else measured_total
+    pcts = [(t / denom * 100.0) if denom else 0.0 for t in totals_ms]
+    totals_s = [t / 1000.0 for t in totals_ms]
+
+    fig, ax = plt.subplots(figsize=(10, max(4, 0.5 * len(names) + 2)))
+    bars = ax.barh(names, totals_s, color='tab:blue')
+    ax.invert_yaxis()
+    ax.set_xlabel('Total wall time (s)')
+    title = 'Training time per stage'
+    if total_time_ms:
+        title += f' — total {total_time_ms / 1000.0:.1f}s, measured {measured_total / 1000.0:.1f}s'
+    ax.set_title(title)
+    ax.grid(True, axis='x', alpha=0.3)
+
+    xmax = max(totals_s) if totals_s else 1.0
+    ax.set_xlim(0, xmax * 1.18)
+    for bar, secs, pct, n in zip(bars, totals_s, pcts, counts):
+        ax.text(
+            bar.get_width() + xmax * 0.01,
+            bar.get_y() + bar.get_height() / 2,
+            f'{secs:.2f}s  ({pct:.1f}%)  n={n}',
+            va='center',
+            fontsize=9,
+        )
+
+    plt.tight_layout()
+
+    out_dir = log_path.parent / log_path.stem
+    out_dir.mkdir(parents=True, exist_ok=True)
+    save_path = out_dir / "stage_breakdown.png"
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print(f"Success! Stage breakdown saved to: {save_path.resolve()}")
+    return save_path
+
 def plot_training_logs(file_path_str):
     # Convert string path to a Path object for easy manipulation
     log_path = Path(file_path_str)
@@ -159,3 +230,4 @@ if __name__ == "__main__":
     
     # Run the plotting function
     plot_training_logs(args.log_path)
+    plot_stage_breakdown(args.log_path)
