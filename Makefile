@@ -4,6 +4,7 @@ BUILD_TYPE ?= Release
 PERLMUTTER_TORCH_CMAKE  := /global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/torch/share/cmake
 PERLMUTTER_NCCL_LIB     := /global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2
 PERLMUTTER_NCCL_INCLUDE := /global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages/nvidia/nccl/include
+PERLMUTTER_GTL_FLAGS    := -L/opt/cray/pe/mpich/8.1.25/gtl/lib -lmpi_gtl_cuda
 
 .PHONY: configure configure_perlmutter build clean
 
@@ -51,7 +52,8 @@ configure_perlmutter:
 		-DBUILD_ITT_STUB=ON \
 		-DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
 		-DCMAKE_C_COMPILER=$$(which gcc) \
-		-DCMAKE_CXX_COMPILER=$$(which g++)
+		-DCMAKE_CXX_COMPILER=$$(which g++) \
+		-DCMAKE_EXE_LINKER_FLAGS="$(PERLMUTTER_GTL_FLAGS)"
 
 build:
 	cmake --build $(BUILD_DIR) -j$(JOBS)

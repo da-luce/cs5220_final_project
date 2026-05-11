@@ -20,9 +20,6 @@ module load cudatoolkit
 # PYTORCH_SITE=/global/common/software/nersc9/pytorch/2.8.0/lib/python3.12/site-packages
 # export LD_LIBRARY_PATH=${PYTORCH_SITE}/nvidia/nccl/lib:${PYTORCH_SITE}/torch/lib:${LD_LIBRARY_PATH}
 
-# NCCL handles GPU transfers; MPI only does control-plane work here
-export MPICH_GPU_SUPPORT_ENABLED=0
-
 # Tune NCCL for Perlmutter's NVLink/Infiniband topology
 export NCCL_DEBUG=WARN
 export NCCL_NET_GDR_LEVEL=PHB
