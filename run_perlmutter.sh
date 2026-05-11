@@ -26,12 +26,19 @@ export MPICH_GPU_SUPPORT_ENABLED=0
 # Tune NCCL for Perlmutter's NVLink/Infiniband topology
 export NCCL_DEBUG=WARN
 export NCCL_NET_GDR_LEVEL=PHB
+export NCCL_IB_HCA=mlx5
 
 VARIANT=${1:-tiny}
 SETUP=${2:-random}
 EPISODES=${3:-20000}
 BATCH=${4:-256}
 
+# Derive total tasks from the actual node count Slurm assigned.
+# Override the default --ntasks=4 header when submitting multi-node:
+#   sbatch --nodes=2 --ntasks=8 run_perlmutter.sh
+NTASKS=${SLURM_NTASKS:-4}
+
 mkdir -p logs models
 
-srun --mpi=cray_shasta ./build/rl/train_stratego "$VARIANT" "$SETUP" "$EPISODES" "$BATCH"
+srun --ntasks="$NTASKS" --mpi=cray_shasta \
+    ./build/rl/train_stratego "$VARIANT" "$SETUP" "$EPISODES" "$BATCH"

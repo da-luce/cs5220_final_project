@@ -24,7 +24,9 @@ struct DistributedContext {
         MPI_Init(&argc, &argv);
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-        cudaSetDevice(rank);
+        int devices_per_node = 1;
+        cudaGetDeviceCount(&devices_per_node);
+        cudaSetDevice(rank % devices_per_node);
 
         ncclUniqueId nccl_id;
         if (rank == 0) ncclGetUniqueId(&nccl_id);
@@ -40,7 +42,10 @@ struct DistributedContext {
         MPI_Finalize();
     }
 
-    torch::Device device() const { return torch::Device(torch::kCUDA, rank); }
+    torch::Device device() const {
+        int n = 1; cudaGetDeviceCount(&n);
+        return torch::Device(torch::kCUDA, rank % n);
+    }
 #else
     DistributedContext(int& /*argc*/, char**& /*argv*/) {
         std::cout << "[CPU-only, no MPI/NCCL] Compiled without USE_NCCL" << std::endl;
