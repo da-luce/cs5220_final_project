@@ -1,22 +1,26 @@
 """
-Stacked bar chart of per-stage training time across (variant, batch_size)
-combos.
+Stacked bar chart of per-stage training time across (variant, sweep_value)
+combos. Shared between the env batch-size sweep (bench_batch_sweep.sh) and
+the OMP thread sweep (bench_thread_sweep.sh) — the manifest line format
+overlaps and we auto-detect which dimension varies.
 
-Reads a manifest produced by bench_batch_sweep.sh — lines of the form
+Manifest lines look like
 
-    VARIANT=<v> BATCH=<b> wall=<ms>ms episodes=<n> num_batches=<n> log=<path>
+    VARIANT=<v> [THREADS=<t>] [BATCH=<b>] wall=<ms>ms episodes=<n> num_batches=<n> log=<path>
 
-For each entry, loads the profiling record from the JSONL log and stacks
-the per-stage totals into one bar. Stages collapse into seven buckets:
+The sweep dimension is whichever of {BATCH, THREADS} varies within at least
+one variant (override with --x BATCH|THREADS). Stages collapse into eight
+buckets:
 
-    rollout_aux, env_step, infer_gpu, ppo_train, allreduce  (called out)
-    misc        — everything else the profiler measured (h2d, d2h, kl, ...)
+    rollout_aux, env_step, infer_h2d, infer_gpu, ppo_train, allreduce  (called out)
+    misc        — everything else the profiler measured (d2h, kl, ...)
     overhead    — total_time_ms - sum(measured stages); unmeasured time
 
-Bars are grouped by variant on the x-axis and ordered by batch size.
+Bars are grouped by variant on the x-axis and ordered by the sweep value.
 
 Usage:
-    python plot/plot_batch_sweep.py logs/batch_sweep_combined_..._manifest.txt
+    python plot/plot_breakdown.py logs/batch_sweep_..._manifest.txt
+    python plot/plot_breakdown.py logs/thread_sweep_..._manifest.txt
 """
 
 import argparse
@@ -29,12 +33,11 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
 
-# Stages we explicitly call out, in stack order (bottom -> top).
-HEADLINE_STAGES = ["env_step", "infer_gpu", "rollout_aux", "ppo_train", "allreduce"]
+HEADLINE_STAGES = ["env_step", "infer_h2d", "infer_gpu", "rollout_aux", "ppo_train", "allreduce"]
 
-# Category order in the stacked bar (bottom -> top) and their colors.
 CATEGORIES = [
     ("env_step",    "tab:orange"),
+    ("infer_h2d",   "tab:purple"),
     ("infer_gpu",   "tab:blue"),
     ("rollout_aux", "tab:cyan"),
     ("ppo_train",   "tab:green"),
@@ -43,9 +46,12 @@ CATEGORIES = [
     ("overhead",    "lightgray"),
 ]
 
-# Accepts both the legacy single-variant manifest and the combined one.
+# Accepts BATCH/THREADS in either order, with either optional.
 LINE_RE = re.compile(
-    r"^(?:VARIANT=(?P<variant>\S+)\s+)?BATCH=(?P<batch>\d+)\s+"
+    r"^(?:VARIANT=(?P<variant>\S+)\s+)?"
+    r"(?:THREADS=(?P<threads1>\d+)\s+)?"
+    r"(?:BATCH=(?P<batch>\d+)\s+)?"
+    r"(?:THREADS=(?P<threads2>\d+)\s+)?"
     r"wall=(?P<wall>\d+)ms\s+"
     r"episodes=(?P<ep>\d+)\s+"
     r"num_batches=(?P<nb>\d+)\s+"
@@ -53,6 +59,8 @@ LINE_RE = re.compile(
 )
 
 VARIANT_HEADER_RE = re.compile(r"variant=(\S+)")
+
+X_LABELS = {"BATCH": "B", "THREADS": "T"}
 
 
 def parse_manifest(path: Path):
@@ -75,9 +83,11 @@ def parse_manifest(path: Path):
         if variant is None:
             print(f"warn: no variant for line (and none in header): {line}", file=sys.stderr)
             continue
+        threads = m.group("threads1") or m.group("threads2")
         rows.append({
             "variant": variant,
-            "batch": int(m.group("batch")),
+            "batch": int(m.group("batch")) if m.group("batch") else None,
+            "threads": int(threads) if threads else None,
             "wall_ms": int(m.group("wall")),
             "episodes": int(m.group("ep")),
             "num_batches": int(m.group("nb")),
@@ -86,8 +96,26 @@ def parse_manifest(path: Path):
     return rows
 
 
+def detect_sweep_dim(rows):
+    """Return 'BATCH' or 'THREADS' — whichever varies within any variant."""
+    by_variant = {}
+    for r in rows:
+        by_variant.setdefault(r["variant"], []).append(r)
+    for dim, key in (("THREADS", "threads"), ("BATCH", "batch")):
+        for vrows in by_variant.values():
+            vals = {r[key] for r in vrows if r[key] is not None}
+            if len(vals) > 1:
+                return dim
+    # Nothing varies — fall back to whichever field is present.
+    for r in rows:
+        if r["threads"] is not None:
+            return "THREADS"
+        if r["batch"] is not None:
+            return "BATCH"
+    sys.exit("manifest has no BATCH or THREADS field to sweep over")
+
+
 def load_profile(jsonl_path: Path):
-    """Return (total_time_ms, {stage_name: total_ms}) or (None, None) if absent."""
     if not jsonl_path.exists():
         return None, None
     with jsonl_path.open() as f:
@@ -106,7 +134,6 @@ def load_profile(jsonl_path: Path):
 
 
 def categorize(total_ms: float, stages: dict):
-    """Return dict {category: ms} summing to total_ms."""
     out = {c: 0.0 for c, _ in CATEGORIES}
     measured = 0.0
     for name, ms in stages.items():
@@ -121,10 +148,12 @@ def categorize(total_ms: float, stages: dict):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("manifest", help="path to logs/batch_sweep_..._manifest.txt")
+    ap.add_argument("manifest", help="path to logs/{batch,thread}_sweep_..._manifest.txt")
     ap.add_argument("--out", default=None, help="output PNG path (default: alongside manifest)")
     ap.add_argument("--per-batch", action="store_true",
                     help="divide each stack by num_batches to show per-step time")
+    ap.add_argument("--x", choices=["BATCH", "THREADS"], default=None,
+                    help="sweep dimension (default: auto-detect from manifest)")
     args = ap.parse_args()
 
     manifest_path = Path(args.manifest)
@@ -135,9 +164,12 @@ def main():
     if not rows:
         sys.exit("no runs parsed from manifest")
 
+    sweep_dim = args.x or detect_sweep_dim(rows)
+    sweep_key = "batch" if sweep_dim == "BATCH" else "threads"
+    x_prefix = X_LABELS[sweep_dim]
+
     project_root = manifest_path.resolve().parent.parent
 
-    # Attach profile data.
     for r in rows:
         log_path = Path(r["log"])
         if not log_path.is_absolute():
@@ -151,16 +183,16 @@ def main():
         r["total_ms"] = total_ms
         r["categories"] = categorize(total_ms, stages)
 
-    rows = [r for r in rows if r["categories"] is not None]
+    rows = [r for r in rows if r["categories"] is not None and r[sweep_key] is not None]
     if not rows:
-        sys.exit("no rows with profiling data; rerun bench_batch_sweep.sh to regenerate logs")
+        sys.exit("no rows with profiling data; rerun the sweep to regenerate logs")
 
-    # Order: variant groups (preserving first-seen order), batch ascending within.
+    # Order: variant groups (preserving first-seen order), sweep value ascending within.
     variants_seen = []
     for r in rows:
         if r["variant"] not in variants_seen:
             variants_seen.append(r["variant"])
-    rows.sort(key=lambda r: (variants_seen.index(r["variant"]), r["batch"]))
+    rows.sort(key=lambda r: (variants_seen.index(r["variant"]), r[sweep_key]))
 
     n = len(rows)
     fig_w = max(8.0, 0.7 * n + 4.0)
@@ -168,7 +200,7 @@ def main():
 
     x = list(range(n))
     bottoms = [0.0] * n
-    scale = 1.0 / 1000.0  # ms -> s
+    scale = 1.0 / 1000.0
     for category, color in CATEGORIES:
         heights = []
         for r in rows:
@@ -180,11 +212,9 @@ def main():
                linewidth=0.5, label=category)
         bottoms = [b + h for b, h in zip(bottoms, heights)]
 
-    # Per-bar batch-size label below x-axis.
     ax.set_xticks(x)
-    ax.set_xticklabels([f"B={r['batch']}" for r in rows], rotation=0, fontsize=9)
+    ax.set_xticklabels([f"{x_prefix}={r[sweep_key]}" for r in rows], rotation=0, fontsize=9)
 
-    # Variant group labels (under the tick labels) and dividers between groups.
     ylim_top = max(bottoms) * 1.18 if bottoms else 1.0
     ax.set_ylim(0, ylim_top)
     group_start = 0
@@ -199,19 +229,18 @@ def main():
             group_start = i
 
     ax.set_ylabel("Time per step (s)" if args.per_batch else "Wall time (s)")
-    title = "Training time breakdown — env batch-size sweep"
+    sweep_name = "env batch-size" if sweep_dim == "BATCH" else "OMP thread"
+    title = f"Training time breakdown — {sweep_name} sweep"
     if args.per_batch:
         title += " (per gradient step)"
     ax.set_title(title)
     ax.grid(True, axis="y", alpha=0.3)
     ax.set_axisbelow(True)
 
-    # Total time annotation atop each bar.
     for xi, total in zip(x, bottoms):
         ax.text(xi, total + ylim_top * 0.01, f"{total:.1f}s",
                 ha="center", va="bottom", fontsize=8, color="black")
 
-    # Legend in bottom->top order (matches stack from bottom up).
     handles = [mpatches.Patch(color=c, label=name) for name, c in CATEGORIES]
     ax.legend(handles=list(reversed(handles)), loc="upper left",
               bbox_to_anchor=(1.01, 1.0), borderaxespad=0., frameon=False)
@@ -222,15 +251,14 @@ def main():
     plt.savefig(out_path, dpi=200, bbox_inches="tight")
     print(f"plot -> {out_path.resolve()}")
 
-    # Also dump a small text summary.
     print()
-    hdr = f"{'variant':>8} {'batch':>6} {'NB':>4} {'total_s':>8}"
+    hdr = f"{'variant':>8} {x_prefix:>6} {'NB':>4} {'total_s':>8}"
     for name, _ in CATEGORIES:
         hdr += f" {name:>11}"
     print(hdr)
     for r in rows:
         total_s = r["total_ms"] / 1000.0
-        line = f"{r['variant']:>8} {r['batch']:>6} {r['num_batches']:>4} {total_s:>8.2f}"
+        line = f"{r['variant']:>8} {r[sweep_key]:>6} {r['num_batches']:>4} {total_s:>8.2f}"
         for name, _ in CATEGORIES:
             line += f" {r['categories'][name]/1000.0:>11.2f}"
         print(line)

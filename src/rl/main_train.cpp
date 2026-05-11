@@ -448,6 +448,8 @@ int main(int argc, char** argv) {
                         env_bufs[e].is_terminals.back() = true;
                     merge_env_buf(e);
                     games_count++;
+                    // all_actions[e] stays 0 — the env will treat it as an invalid move,
+                    // terminate, and immediately auto-reset inside step().
                 } else {
                     int ai = (int)active.size();
                     inf_obs[ai].copy_(cur_obs[e]);
