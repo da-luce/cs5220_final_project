@@ -1,4 +1,5 @@
 #include "ppo_agent.h"
+#include "rl/profiler.h"
 #include <algorithm>
 #include <cmath>
 
@@ -50,21 +51,29 @@ BatchedAgentOutput PPOAgent::act_batch(const torch::Tensor& obs_batch, const tor
     auto device = model->parameters()[0].device();
     int N = obs_batch.size(0);
 
-    auto [logits, values] = model->forward(obs_batch.to(device));
-    torch::Tensor flat_logits = logits.view({N, -1});
-    torch::Tensor masked_logits = flat_logits.clone();
-    masked_logits.masked_fill_(mask_batch.to(device) == 0, -1e9);
+    torch::Tensor actions, sel_log_probs, vals;
+    {
+        PROFILE_SCOPE_GPU("infer_gpu");
+        auto [logits, values] = model->forward(obs_batch.to(device));
+        torch::Tensor flat_logits = logits.view({N, -1});
+        torch::Tensor masked_logits = flat_logits.clone();
+        masked_logits.masked_fill_(mask_batch.to(device) == 0, -1e9);
 
-    torch::Tensor probs = torch::softmax(masked_logits, 1);
-    torch::Tensor actions = torch::multinomial(probs, 1).squeeze(1);           // [N]
-    torch::Tensor log_prob_mat = torch::log_softmax(masked_logits, 1);
-    torch::Tensor sel_log_probs = log_prob_mat.gather(1, actions.unsqueeze(1)).squeeze(1); // [N]
-    torch::Tensor vals = values.squeeze(1);                                    // [N]
+        torch::Tensor probs = torch::softmax(masked_logits, 1);
+        actions = torch::multinomial(probs, 1).squeeze(1);           // [N]
+        torch::Tensor log_prob_mat = torch::log_softmax(masked_logits, 1);
+        sel_log_probs = log_prob_mat.gather(1, actions.unsqueeze(1)).squeeze(1); // [N]
+        vals = values.squeeze(1);                                    // [N]
+    }
 
     // One batch transfer to CPU instead of 3N individual GPU syncs
-    auto act_cpu = actions.to(torch::kCPU);
-    auto lp_cpu  = sel_log_probs.to(torch::kCPU);
-    auto val_cpu = vals.to(torch::kCPU);
+    torch::Tensor act_cpu, lp_cpu, val_cpu;
+    {
+        PROFILE_SCOPE_GPU("infer_d2h");
+        act_cpu = actions.to(torch::kCPU);
+        lp_cpu  = sel_log_probs.to(torch::kCPU);
+        val_cpu = vals.to(torch::kCPU);
+    }
 
     auto* act_ptr = act_cpu.data_ptr<int64_t>();
     auto* lp_ptr  = lp_cpu.data_ptr<float>();
@@ -98,12 +107,16 @@ void PPOAgent::update_weights(RolloutBuffer<torch::Tensor, int>& buffer) {
     }
 
     auto options = torch::TensorOptions().dtype(torch::kFloat32);
-    torch::Tensor states = torch::stack(buffer.observations).to(device);
-    torch::Tensor actions = torch::tensor(buffer.actions, torch::kInt64).to(device);
-    torch::Tensor old_logprobs = torch::tensor(buffer.log_probs, options).to(device);
-    torch::Tensor returns = torch::tensor(returns_vec, options).to(device);
-    torch::Tensor old_values = torch::tensor(buffer.values, options).to(device);
-    torch::Tensor masks = torch::stack(buffer.masks).view({(int)buffer.size(), -1}).to(device);
+    torch::Tensor states, actions, old_logprobs, returns, old_values, masks;
+    {
+        PROFILE_SCOPE_GPU("ppo_h2d");
+        states       = torch::stack(buffer.observations).to(device);
+        actions      = torch::tensor(buffer.actions, torch::kInt64).to(device);
+        old_logprobs = torch::tensor(buffer.log_probs, options).to(device);
+        returns      = torch::tensor(returns_vec, options).to(device);
+        old_values   = torch::tensor(buffer.values, options).to(device);
+        masks        = torch::stack(buffer.masks).view({(int)buffer.size(), -1}).to(device);
+    }
 
     // Python Parity: Normalize returns
     if (buffer.size() > 1) {
@@ -111,6 +124,8 @@ void PPOAgent::update_weights(RolloutBuffer<torch::Tensor, int>& buffer) {
     }
 
     // 2. Optimization Loop
+    {
+    PROFILE_SCOPE_GPU("ppo_train");
     for (int epoch = 0; epoch < k_epochs; ++epoch) {
         auto [logits, values] = model->forward(states);
         torch::Tensor flat_logits = logits.view({(int)buffer.size(), -1});
@@ -148,11 +163,13 @@ void PPOAgent::update_weights(RolloutBuffer<torch::Tensor, int>& buffer) {
             last_stats_.entropy     = entropy.item<float>();
         }
     }
+    } // end ppo_train scope
 
     // Post-update approx KL (extra forward pass; diagnostic only).
     // With k_epochs == 1 the in-loop ratio is always 1 (model unchanged at the
     // moment of evaluation), so KL must be measured against the post-step model.
     {
+        PROFILE_SCOPE_GPU("ppo_kl");
         torch::NoGradGuard no_grad;
         auto [logits, values] = model->forward(states);
         torch::Tensor flat_logits = logits.view({(int)buffer.size(), -1});
