@@ -62,8 +62,6 @@ make build
 
 ```shell
 module load PrgEnv-gnu
-module load gcc/12.2.0
-module load cray-mpich/8.1.25
 module load cudatoolkit
 ```
 
@@ -74,8 +72,12 @@ make configure_perlmutter
 make build
 ```
 
-`configure_perlmutter` sets the NERSC PyTorch and NCCL paths and enables `BUILD_ITT_STUB`
+`configure_perlmutter` sets the NERSC PyTorch and NCCL paths, links the Cray GTL library
+(`libmpi_gtl_cuda`) needed for GPU-aware MPI on A100 nodes, and enables `BUILD_ITT_STUB`
 (see [perlmutter/ittnotify_stub.cpp](perlmutter/ittnotify_stub.cpp) for why that's needed).
+
+The GTL flags (`PE_MPICH_GTL_DIR_nvidia80` / `PE_MPICH_GTL_LIBS_nvidia80`) are read from
+the environment automatically by the loaded `cray-mpich` module, so no version is hardcoded.
 
 ### Run Tests
 
@@ -121,7 +123,64 @@ The binary prints whether OpenMP is active and how many threads are in use at st
 
 - [CS 5782 SP2026](https://www.cs.cornell.edu/courses/cs4782/2026sp/): helpful RL background resources
 
-# TODO: Training on Perlmutter
+## Training on Perlmutter
+
+Training uses MPI + NCCL for distributed PPO. Each MPI rank owns one GPU and runs
+independent self-play rollouts; weights are averaged across ranks via NCCL `AllReduce`
+after each batch.
+
+### Single node (4 GPUs)
+
+```shell
+sbatch run_perlmutter.sh [variant] [setup] [total_episodes] [batch_size]
+```
+
+Defaults: `tiny random 20000 256`.
+
+### Multi-node
+
+Pass `--nodes` and `--ntasks` (nodes × 4) at submission time:
+
+```shell
+# 2 nodes, 8 GPUs
+sbatch --nodes=2 --ntasks=8 run_perlmutter.sh tiny random 20000 256
+```
+
+`total_episodes` is divided evenly across ranks, so to keep the same per-rank workload
+when scaling out, multiply episodes by the number of ranks:
+
+```shell
+# same per-rank work on 8 GPUs as 20000 episodes on 1 GPU
+sbatch --nodes=2 --ntasks=8 run_perlmutter.sh tiny random 160000 256
+```
+
+### Verifying it works
+
+Once the job starts, tail the log:
+
+```shell
+tail -f logs/train_<JOBID>.out
+```
+
+You should see:
+
+```
+[NCCL+MPI enabled] MPI world_size=8
+Ranks: 8 | Per-Rank Batch: 256 | Effective Batch: 2048
+```
+
+If `world_size` is 1, ranks are not communicating — check that `--mpi=pmi2` is used in
+the `srun` call (not `cray_shasta`) and that the binary was built with the GTL library.
+
+### Key implementation notes
+
+- **PMI launcher:** `srun --mpi=pmi2` is required. `--mpi=cray_shasta` triggers an OFI
+  fabric init failure (`fi_getinfo() No data available`) with this binary.
+- **GTL library:** `libmpi_gtl_cuda` must be linked at build time (done via
+  `PE_MPICH_GTL_DIR_nvidia80` / `PE_MPICH_GTL_LIBS_nvidia80` in `configure_perlmutter`).
+  Do **not** set `MPICH_GPU_SUPPORT_ENABLED=0` — that disables the GTL and breaks OFI init.
+- **Multi-node device mapping:** each rank calls `cudaSetDevice(rank % devices_per_node)`
+  so ranks on node 1 map to local GPUs 0–3 rather than invalid device indices 4–7.
 
 ## Architecture & Tech Stack
 
