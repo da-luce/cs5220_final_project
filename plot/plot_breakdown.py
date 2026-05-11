@@ -1,16 +1,17 @@
 """
 Stacked bar chart of per-stage training time across (variant, sweep_value)
-combos. Shared between the env batch-size sweep (bench_batch_sweep.sh) and
-the OMP thread sweep (bench_thread_sweep.sh) — the manifest line format
-overlaps and we auto-detect which dimension varies.
+combos. Shared between the env batch-size sweep (bench_batch_sweep.sh), the
+OMP thread sweep (bench_thread_sweep.sh), and the rank/GPU sweep
+(bench_rank_sweep.sh) — the manifest line format overlaps and we
+auto-detect which dimension varies.
 
 Manifest lines look like
 
-    VARIANT=<v> [THREADS=<t>] [BATCH=<b>] wall=<ms>ms episodes=<n> num_batches=<n> log=<path>
+    VARIANT=<v> [THREADS=<t>] [BATCH=<b>] [NGPU=<n>] wall=<ms>ms episodes=<n> num_batches=<n> log=<path>
 
-The sweep dimension is whichever of {BATCH, THREADS} varies within at least
-one variant (override with --x BATCH|THREADS). Stages collapse into eight
-buckets:
+The sweep dimension is whichever of {BATCH, THREADS, NGPU} varies within
+at least one variant (override with --x BATCH|THREADS|NGPU). Stages
+collapse into eight buckets:
 
     rollout_aux, env_step, infer_h2d, infer_gpu, ppo_train, allreduce  (called out)
     misc        — everything else the profiler measured (d2h, kl, ...)
@@ -21,6 +22,7 @@ Bars are grouped by variant on the x-axis and ordered by the sweep value.
 Usage:
     python plot/plot_breakdown.py logs/batch_sweep_..._manifest.txt
     python plot/plot_breakdown.py logs/thread_sweep_..._manifest.txt
+    python plot/plot_breakdown.py logs/rank_sweep_..._manifest.txt
 """
 
 import argparse
@@ -46,21 +48,22 @@ CATEGORIES = [
     ("overhead",    "lightgray"),
 ]
 
-# Accepts BATCH/THREADS in either order, with either optional.
+# Match: any order of `KEY=value` tokens, then the fixed wall=...log= tail.
+# Lets us add new sweep dimensions (NGPU, ...) without touching the regex.
 LINE_RE = re.compile(
-    r"^(?:VARIANT=(?P<variant>\S+)\s+)?"
-    r"(?:THREADS=(?P<threads1>\d+)\s+)?"
-    r"(?:BATCH=(?P<batch>\d+)\s+)?"
-    r"(?:THREADS=(?P<threads2>\d+)\s+)?"
+    r"^(?P<prefix>(?:\w+=\S+\s+)*)"
     r"wall=(?P<wall>\d+)ms\s+"
     r"episodes=(?P<ep>\d+)\s+"
     r"num_batches=(?P<nb>\d+)\s+"
     r"log=(?P<log>\S+)\s*$"
 )
+PREFIX_TOKEN_RE = re.compile(r"(\w+)=(\S+)")
 
 VARIANT_HEADER_RE = re.compile(r"variant=(\S+)")
 
-X_LABELS = {"BATCH": "B", "THREADS": "T"}
+X_LABELS = {"BATCH": "B", "THREADS": "T", "NGPU": "N"}
+# Mapping from sweep-dim name to the row key holding the integer value.
+DIM_KEYS = {"BATCH": "batch", "THREADS": "threads", "NGPU": "ngpu"}
 
 
 def parse_manifest(path: Path):
@@ -79,15 +82,16 @@ def parse_manifest(path: Path):
         if not m:
             print(f"warn: skipping unparseable manifest line: {line}", file=sys.stderr)
             continue
-        variant = m.group("variant") or header_variant
+        fields = dict(PREFIX_TOKEN_RE.findall(m.group("prefix")))
+        variant = fields.get("VARIANT", header_variant)
         if variant is None:
             print(f"warn: no variant for line (and none in header): {line}", file=sys.stderr)
             continue
-        threads = m.group("threads1") or m.group("threads2")
         rows.append({
             "variant": variant,
-            "batch": int(m.group("batch")) if m.group("batch") else None,
-            "threads": int(threads) if threads else None,
+            "batch":   int(fields["BATCH"])   if "BATCH"   in fields else None,
+            "threads": int(fields["THREADS"]) if "THREADS" in fields else None,
+            "ngpu":    int(fields["NGPU"])    if "NGPU"    in fields else None,
             "wall_ms": int(m.group("wall")),
             "episodes": int(m.group("ep")),
             "num_batches": int(m.group("nb")),
@@ -97,22 +101,21 @@ def parse_manifest(path: Path):
 
 
 def detect_sweep_dim(rows):
-    """Return 'BATCH' or 'THREADS' — whichever varies within any variant."""
+    """Return 'BATCH', 'THREADS', or 'NGPU' — whichever varies within any variant."""
     by_variant = {}
     for r in rows:
         by_variant.setdefault(r["variant"], []).append(r)
-    for dim, key in (("THREADS", "threads"), ("BATCH", "batch")):
+    for dim, key in (("NGPU", "ngpu"), ("THREADS", "threads"), ("BATCH", "batch")):
         for vrows in by_variant.values():
             vals = {r[key] for r in vrows if r[key] is not None}
             if len(vals) > 1:
                 return dim
     # Nothing varies — fall back to whichever field is present.
-    for r in rows:
-        if r["threads"] is not None:
-            return "THREADS"
-        if r["batch"] is not None:
-            return "BATCH"
-    sys.exit("manifest has no BATCH or THREADS field to sweep over")
+    for dim, key in (("NGPU", "ngpu"), ("THREADS", "threads"), ("BATCH", "batch")):
+        for r in rows:
+            if r[key] is not None:
+                return dim
+    sys.exit("manifest has no BATCH, THREADS, or NGPU field to sweep over")
 
 
 def load_profile(jsonl_path: Path):
@@ -152,7 +155,7 @@ def main():
     ap.add_argument("--out", default=None, help="output PNG path (default: alongside manifest)")
     ap.add_argument("--per-batch", action="store_true",
                     help="divide each stack by num_batches to show per-step time")
-    ap.add_argument("--x", choices=["BATCH", "THREADS"], default=None,
+    ap.add_argument("--x", choices=["BATCH", "THREADS", "NGPU"], default=None,
                     help="sweep dimension (default: auto-detect from manifest)")
     args = ap.parse_args()
 
@@ -165,7 +168,7 @@ def main():
         sys.exit("no runs parsed from manifest")
 
     sweep_dim = args.x or detect_sweep_dim(rows)
-    sweep_key = "batch" if sweep_dim == "BATCH" else "threads"
+    sweep_key = DIM_KEYS[sweep_dim]
     x_prefix = X_LABELS[sweep_dim]
 
     project_root = manifest_path.resolve().parent.parent
@@ -229,7 +232,8 @@ def main():
             group_start = i
 
     ax.set_ylabel("Time per step (s)" if args.per_batch else "Wall time (s)")
-    sweep_name = "env batch-size" if sweep_dim == "BATCH" else "OMP thread"
+    sweep_name = {"BATCH": "env batch-size", "THREADS": "OMP thread",
+                  "NGPU": "rank (GPU)"}[sweep_dim]
     title = f"Training time breakdown — {sweep_name} sweep"
     if args.per_batch:
         title += " (per gradient step)"
