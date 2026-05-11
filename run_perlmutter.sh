@@ -11,8 +11,6 @@
 #SBATCH --error=logs/train_%j.err
 
 module load PrgEnv-gnu
-module load gcc/12.2.0
-module load cray-mpich/8.1.25
 module load cudatoolkit
 
 # # Make the NCCL bundled with PyTorch available at runtime so libtorch_cuda.so can
