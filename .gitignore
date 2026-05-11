@@ -13,3 +13,4 @@ logs/
 *.tmp
 *.swp
 .claude/
+__pycache__/

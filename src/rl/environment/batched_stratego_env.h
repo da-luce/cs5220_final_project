@@ -27,6 +27,7 @@ public:
     BatchedStepResult step(const torch::Tensor& actions);
 
     int get_batch_size() const { return batch_size; }
+    int get_max_moves() const { return envs[0]->get_max_moves(); } // Assumes all envs have the same max_moves
     int get_action_channels() const;
     std::vector<stratego::Player> get_current_players() const;
 
