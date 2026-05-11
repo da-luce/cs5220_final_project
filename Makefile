@@ -49,7 +49,9 @@ configure_perlmutter:
 		-DNCCL_LIB=$(PERLMUTTER_NCCL_LIB) \
 		-DNCCL_INCLUDE=$(PERLMUTTER_NCCL_INCLUDE) \
 		-DBUILD_ITT_STUB=ON \
-		-DCMAKE_BUILD_TYPE=$(BUILD_TYPE)
+		-DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
+		-DCMAKE_C_COMPILER=$$(which gcc) \
+		-DCMAKE_CXX_COMPILER=$$(which g++)
 
 build:
 	cmake --build $(BUILD_DIR) -j$(JOBS)
