@@ -71,13 +71,14 @@ for VARIANT in "${VARIANTS[@]}"; do
 
         WALL_MS=$((AFTER_MS - BEFORE_MS))
 
-        # Maintaining original log format for the plotting script
-        echo "VARIANT=$VARIANT BATCH=$BATCH wall=${WALL_MS}ms episodes=$EPISODES num_batches=$NB log=$NEW_LOG" \
+        # THREADS is fixed here but logged for parity with bench_thread_sweep.sh
+        # so plot/plot_breakdown.py can ingest either manifest.
+        echo "VARIANT=$VARIANT THREADS=$OMP_NUM_THREADS BATCH=$BATCH wall=${WALL_MS}ms episodes=$EPISODES num_batches=$NB log=$NEW_LOG" \
             | tee -a "$MANIFEST"
     done
 done
 
 echo
 echo "Done. To plot:"
-echo "  python plot/plot_batch_breakdown.py $MANIFEST    # stacked stage breakdown"
-echo "  python plot/plot_batch_sweep.py     $MANIFEST    # throughput / per-batch / ms-per-game"
+echo "  python plot/plot_breakdown.py   $MANIFEST    # stacked stage breakdown (shared with thread sweep)"
+echo "  python plot/plot_batch_sweep.py $MANIFEST    # throughput / per-batch / ms-per-game"

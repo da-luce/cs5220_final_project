@@ -51,13 +51,20 @@ BatchedAgentOutput PPOAgent::act_batch(const torch::Tensor& obs_batch, const tor
     auto device = model->parameters()[0].device();
     int N = obs_batch.size(0);
 
+    torch::Tensor obs_dev, mask_dev;
+    {
+        PROFILE_SCOPE_GPU("infer_h2d");
+        obs_dev  = obs_batch.to(device);
+        mask_dev = mask_batch.to(device);
+    }
+
     torch::Tensor actions, sel_log_probs, vals;
     {
         PROFILE_SCOPE_GPU("infer_gpu");
-        auto [logits, values] = model->forward(obs_batch.to(device));
+        auto [logits, values] = model->forward(obs_dev);
         torch::Tensor flat_logits = logits.view({N, -1});
         torch::Tensor masked_logits = flat_logits.clone();
-        masked_logits.masked_fill_(mask_batch.to(device) == 0, -1e9);
+        masked_logits.masked_fill_(mask_dev == 0, -1e9);
 
         torch::Tensor probs = torch::softmax(masked_logits, 1);
         actions = torch::multinomial(probs, 1).squeeze(1);           // [N]
