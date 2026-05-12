@@ -2,8 +2,8 @@
 #SBATCH --job-name=stratego_rank_sweep
 #SBATCH --account=m4341_g
 #SBATCH --constraint=gpu
-#SBATCH --nodes=1
-#SBATCH --ntasks=4
+#SBATCH --nodes=4
+#SBATCH --ntasks=16
 #SBATCH --gpus-per-node=4
 #SBATCH --cpus-per-task=8
 #SBATCH --time=00:30:00
@@ -26,13 +26,11 @@
 # came from which (variant, N) and record it in the manifest.
 
 module load PrgEnv-gnu
-module load gcc/12.2.0
-module load cray-mpich/8.1.25
 module load cudatoolkit
 
-export MPICH_GPU_SUPPORT_ENABLED=0
 export NCCL_DEBUG=WARN
 export NCCL_NET_GDR_LEVEL=PHB
+export NCCL_IB_HCA=mlx5
 
 # Held fixed across the rank sweep so only NGPU varies. Picked near the
 # throughput plateau from bench_thread_sweep.sh -- enough CPU help to keep
@@ -49,7 +47,11 @@ VARIANTS=(tiny classic)
 BATCH_tiny=256
 BATCH_classic=256
 
-NGPU_LIST=(1 2 3 4)
+# Sweep 1..16 GPUs across up to 4 nodes (4 GPUs per Perlmutter GPU node).
+# Skip values that don't add resolution to the speedup curve to keep the
+# wall-clock budget reasonable. Submit with at least 4 nodes / 16 tasks,
+# e.g. `sbatch --nodes=4 --ntasks=16 perlmutter/bench_rank_sweep.sh ...`.
+NGPU_LIST=(1 2 4 8 12 16)
 
 mkdir -p logs models
 STAMP=$(date +%Y%m%d_%H%M%S)
@@ -75,13 +77,18 @@ for VARIANT in "${VARIANTS[@]}"; do
                  "to at least $((2 * BATCH * NGPU)) to get usable timing." >&2
         fi
 
+        # Ceiling-divide so each srun uses only as many nodes as needed
+        # (4 GPUs/node on Perlmutter). e.g. NGPU=6 -> 2 nodes (4+2 block dist),
+        # NGPU=10 -> 3 nodes. The outer allocation must have NNODES >= 4.
+        NNODES=$(( (NGPU + 3) / 4 ))
+
         echo
-        echo "========== VARIANT=$VARIANT NGPU=$NGPU BATCH=$BATCH NB=$NB EPISODES=$EPISODES =========="
+        echo "========== VARIANT=$VARIANT NGPU=$NGPU NNODES=$NNODES BATCH=$BATCH NB=$NB EPISODES=$EPISODES =========="
 
         BEFORE_MS=$(date +%s%3N)
         BEFORE_LOGS=$(ls -1 logs/bench_${VARIANT}_${SETUP}_n${NGPU}_*.jsonl 2>/dev/null | sort)
 
-        srun --ntasks=$NGPU --gpus-per-node=4 --cpus-per-task=8 --mpi=cray_shasta \
+        srun --nodes=$NNODES --ntasks=$NGPU --gpus-per-node=4 --cpus-per-task=8 --mpi=cray_shasta \
              ./build/src/rl/train_stratego "$VARIANT" "$SETUP" "$EPISODES" "$BATCH" 0
 
         AFTER_MS=$(date +%s%3N)
@@ -90,7 +97,7 @@ for VARIANT in "${VARIANTS[@]}"; do
 
         WALL_MS=$((AFTER_MS - BEFORE_MS))
 
-        echo "VARIANT=$VARIANT NGPU=$NGPU BATCH=$BATCH wall=${WALL_MS}ms episodes=$EPISODES num_batches=$NB log=$NEW_LOG" \
+        echo "VARIANT=$VARIANT NGPU=$NGPU NNODES=$NNODES BATCH=$BATCH wall=${WALL_MS}ms episodes=$EPISODES num_batches=$NB log=$NEW_LOG" \
             | tee -a "$MANIFEST"
     done
 done

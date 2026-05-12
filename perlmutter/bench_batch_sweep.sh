@@ -11,13 +11,11 @@
 #SBATCH --error=logs/batch_sweep_%j.err
 
 module load PrgEnv-gnu
-module load gcc/12.2.0
-module load cray-mpich/8.1.25
 module load cudatoolkit
 
-export MPICH_GPU_SUPPORT_ENABLED=0
 export NCCL_DEBUG=WARN
 export NCCL_NET_GDR_LEVEL=PHB
+export NCCL_IB_HCA=mlx5
 
 export OMP_NUM_THREADS=8 # Empirically found this to be the best for both tiny and classic
 
