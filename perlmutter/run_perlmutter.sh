@@ -23,6 +23,8 @@ export NCCL_DEBUG=WARN
 export NCCL_NET_GDR_LEVEL=PHB
 export NCCL_IB_HCA=mlx5
 
+export OMP_NUM_THREADS=16
+
 VARIANT=${1:-tiny}
 SETUP=${2:-random}
 EPISODES=${3:-20000}
